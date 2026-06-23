@@ -1,0 +1,91 @@
+name: Deploy to aaPanel via Docker
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Trích xuất code và đẩy lên server aaPanel
+        uses: appleboy/scp-action@v0.1.4
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_PORT || 22 }}
+          source: "."
+          target: "/www/wwwroot/Timdanhsachdisan"
+
+      - name: Deploy qua SSH sử dụng Docker Compose
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_PORT || 22 }}
+          script_stop: true
+          script: |
+            echo "============================================="
+            echo "🚀 Đang kết nối mượt mà tới VPS aaPanel..."
+            echo "============================================="
+            
+            # Di chuyển vào thư mục dự án đã đồng bộ mã nguồn
+            cd /www/wwwroot/Timdanhsachdisan
+            
+            # Xóa các tệp git dự thừa nếu có
+            rm -rf .git
+            
+            # Tự động đồng bộ các biến môi trường cấu hình production vào .env.prod
+            if [ ! -f ".env.prod" ]; then
+              touch .env.prod
+              echo 'NODE_ENV="production"' >> .env.prod
+              echo 'PORT=3180' >> .env.prod
+              echo 'DB_PATH="/app/data/data.db"' >> .env.prod
+            fi
+            
+            # Đảm bảo có giá trị kết nối dữ liệu mặc định của trăm năm di sản
+            if ! grep -q "DATABASE_URL" .env.prod; then
+              echo 'DATABASE_URL="mongodb://crmbotdisan:Ccb4DXxTM8M6ysaN@103.75.182.86:27017/crmbotdisan?retryWrites=true&w=majority"' >> .env.prod
+            fi
+            if ! grep -q "MONGODB_URI" .env.prod; then
+              echo 'MONGODB_URI="mongodb://crmbotdisan:Ccb4DXxTM8M6ysaN@103.75.182.86:27017/crmbotdisan?retryWrites=true&w=majority"' >> .env.prod
+            fi
+            
+            # Khởi tạo các biến nếu người dùng bổ sung qua Secrets
+            if [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
+              sed -i '/GEMINI_API_KEY/d' .env.prod || true
+              echo 'GEMINI_API_KEY="${{ secrets.GEMINI_API_KEY }}"' >> .env.prod
+            fi
+            if [ -n "${{ secrets.DATABASE_URL }}" ]; then
+              sed -i '/DATABASE_URL/d' .env.prod || true
+              echo 'DATABASE_URL="${{ secrets.DATABASE_URL }}"' >> .env.prod
+            fi
+            if [ -n "${{ secrets.MONGODB_URI }}" ]; then
+              sed -i '/MONGODB_URI/d' .env.prod || true
+              echo 'MONGODB_URI="${{ secrets.MONGODB_URI }}"' >> .env.prod
+            fi
+            if [ -n "${{ secrets.SERVER_DEPLOY_PORT }}" ]; then
+              sed -i '/SERVER_DEPLOY_PORT/d' .env.prod || true
+              echo 'SERVER_DEPLOY_PORT="${{ secrets.SERVER_DEPLOY_PORT }}"' >> .env.prod
+            fi
+
+            echo "⚡ Xóa bỏ container cũ nếu trùng tên hoặc kẹt cổng..."
+            docker-compose -p Timdanhsachdisan -f docker-compose.prod.yml down || true
+            docker rm -f lacquer_heritage_scraper || true
+            
+            echo "🏗️ Xây dựng lại ứng dụng bằng Docker Compose..."
+            docker-compose -p Timdanhsachdisan -f docker-compose.prod.yml up -d --build
+            
+            echo "🧹 Thu dọn dữ liệu rác, giải phóng dung lượng VPS..."
+            docker image prune -f
+            
+            echo "🎉 [Thành công] Toàn bộ ứng dụng đã được khởi chạy ổn định!"
+            echo "============================================="

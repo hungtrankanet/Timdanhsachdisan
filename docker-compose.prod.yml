@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  lacquer-heritage-app:
+    build: .
+    container_name: lacquer_heritage_scraper
+    ports:
+      - "3180:3180"
+    volumes:
+      - ./data:/app/data
+      - ./zalo_user_data:/app/zalo_user_data
+    environment:
+      - PORT=3180
+      - DB_PATH=/app/data/data.db
+      - NODE_ENV=production
+    env_file:
+      - .env.prod
+    restart: unless-stopped
