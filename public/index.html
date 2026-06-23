@@ -83,9 +83,19 @@
         <main class="main-content">
         <!-- Card 1: Leads list -->
         <div class="glass-card" style="margin-bottom: 25px;">
-          <div class="card-header">
+          <div class="card-header" style="flex-wrap: wrap; gap: 15px;">
             <h2>Danh sách nghệ nhân & Cửa hàng</h2>
-            <div class="lead-actions">
+            <div class="lead-actions" style="display: flex; gap: 10px; align-items: center;">
+              <select id="lead-status-filter" style="background: rgba(0,0,0,0.8); border: 1px solid var(--card-border); padding: 8px 12px; border-radius: 6px; color: #fff; font-size: 13px; outline: none; min-width: 240px; font-family: var(--font-family-sans);">
+                <option value="all">Tất cả liên hệ</option>
+                <option value="ready_zalo">👉 Sẵn sàng đưa qua Zalo (Độ phù hợp cao & Zalo chờ)</option>
+                <option value="verified">Đã xác thực (Verified)</option>
+                <option value="partially_verified">Khớp 1 phần (Partially Verified)</option>
+                <option value="pending_review">Chờ duyệt (Pending Review)</option>
+                <option value="rejected">Bác bỏ (Rejected)</option>
+                <option value="invalid">Lỗi thông tin (Invalid)</option>
+                <option value="unverified">Chưa xác thực (Unverified)</option>
+              </select>
               <button id="btn-refresh-leads" class="btn btn-primary-outline">Làm mới dữ liệu</button>
             </div>
           </div>

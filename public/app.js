@@ -90,6 +90,7 @@ window.handleLogin = handleLogin;
 let currentLeadsPage = 1;
 const leadsPerPage = 10;
 let allLeads = [];
+let activeLeadsList = [];
 
 // 1. Fetch and render leads list
 async function loadLeads() {
@@ -116,7 +117,40 @@ function renderLeadsPage() {
     return;
   }
 
-  const totalPages = Math.ceil(allLeads.length / leadsPerPage);
+  const filterSelect = document.getElementById('lead-status-filter');
+  const filterVal = filterSelect ? filterSelect.value : 'all';
+
+  if (filterVal === 'ready_zalo') {
+    activeLeadsList = allLeads.filter(lead => 
+      (lead.verification_status === 'verified' || lead.verification_status === 'partially_verified') &&
+      lead.zalo_status === 'pending'
+    );
+  } else if (filterVal === 'verified') {
+    activeLeadsList = allLeads.filter(lead => lead.verification_status === 'verified');
+  } else if (filterVal === 'partially_verified') {
+    activeLeadsList = allLeads.filter(lead => lead.verification_status === 'partially_verified');
+  } else if (filterVal === 'pending_review') {
+    activeLeadsList = allLeads.filter(lead => lead.verification_status === 'pending_review');
+  } else if (filterVal === 'rejected') {
+    activeLeadsList = allLeads.filter(lead => lead.verification_status === 'rejected');
+  } else if (filterVal === 'invalid') {
+    activeLeadsList = allLeads.filter(lead => lead.verification_status === 'invalid');
+  } else if (filterVal === 'unverified') {
+    activeLeadsList = allLeads.filter(lead => lead.verification_status !== 'verified' && lead.verification_status !== 'partially_verified' && lead.verification_status !== 'invalid' && lead.verification_status !== 'pending_review' && lead.verification_status !== 'rejected');
+  } else {
+    activeLeadsList = [...allLeads];
+  }
+
+  if (activeLeadsList.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" class="loading-cell">Không có dữ liệu phù hợp với bộ lọc.</td></tr>`;
+    document.getElementById('leads-pagination-info').textContent = '0 - 0 của 0';
+    document.getElementById('btn-prev-page').disabled = true;
+    document.getElementById('btn-next-page').disabled = true;
+    document.getElementById('current-page-num').textContent = 'Trang 1 / 1';
+    return;
+  }
+
+  const totalPages = Math.ceil(activeLeadsList.length / leadsPerPage);
   if (currentLeadsPage > totalPages) {
     currentLeadsPage = totalPages;
   }
@@ -125,8 +159,8 @@ function renderLeadsPage() {
   }
 
   const startIdx = (currentLeadsPage - 1) * leadsPerPage;
-  const endIdx = Math.min(startIdx + leadsPerPage, allLeads.length);
-  const pageLeads = allLeads.slice(startIdx, endIdx);
+  const endIdx = Math.min(startIdx + leadsPerPage, activeLeadsList.length);
+  const pageLeads = activeLeadsList.slice(startIdx, endIdx);
 
   tbody.innerHTML = '';
   pageLeads.forEach(lead => {
@@ -203,7 +237,7 @@ function renderLeadsPage() {
   });
 
   // Update pagination UI controls
-  document.getElementById('leads-pagination-info').textContent = `${startIdx + 1} - ${endIdx} của ${allLeads.length}`;
+  document.getElementById('leads-pagination-info').textContent = `${startIdx + 1} - ${endIdx} của ${activeLeadsList.length}`;
   document.getElementById('current-page-num').textContent = `Trang ${currentLeadsPage} / ${totalPages}`;
   document.getElementById('btn-prev-page').disabled = currentLeadsPage === 1;
   document.getElementById('btn-next-page').disabled = currentLeadsPage === totalPages;
@@ -1158,6 +1192,14 @@ function setupEventListeners() {
   if (btnConnect) btnConnect.addEventListener('click', connectZalo);
   
   document.getElementById('btn-refresh-leads').addEventListener('click', loadLeads);
+
+  const filterSelect = document.getElementById('lead-status-filter');
+  if (filterSelect) {
+    filterSelect.addEventListener('change', () => {
+      currentLeadsPage = 1;
+      renderLeadsPage();
+    });
+  }
   setupStaffUI();
   setupPendingReviewUI();
 
@@ -1189,7 +1231,7 @@ function setupEventListeners() {
   }
   if (btnNext) {
     btnNext.addEventListener('click', () => {
-      const totalPages = Math.ceil(allLeads.length / leadsPerPage);
+      const totalPages = Math.ceil(activeLeadsList.length / leadsPerPage);
       if (currentLeadsPage < totalPages) {
         currentLeadsPage++;
         renderLeadsPage();
