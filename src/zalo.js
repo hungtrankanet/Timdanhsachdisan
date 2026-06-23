@@ -35,22 +35,27 @@ export async function initZaloSession(accountId = 'default', logCallback = log, 
     }
   }
 
-  logCallback(`Khởi chạy trình duyệt Zalo Web cho tài khoản ID ${accountId} (headless: ${headless})...`);
+  const isProduction = process.env.NODE_ENV === 'production';
+  const runHeadless = isProduction ? true : headless;
+
+  logCallback(`Khởi chạy trình duyệt Zalo Web cho tài khoản ID ${accountId} (headless: ${runHeadless})...`);
   const sessionDir = join(userDataDir, `account_${accountId}`);
   if (!fs.existsSync(userDataDir)) {
     fs.mkdirSync(userDataDir, { recursive: true });
   }
 
   const browser = await puppeteer.launch({
-    headless: headless,
+    headless: runHeadless,
     userDataDir: sessionDir,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
       '--disable-notifications',
       '--window-size=1280,800'
     ]
   });
+
 
   const page = (await browser.pages())[0] || await browser.newPage();
   await page.setViewport({ width: 1280, height: 800 });
