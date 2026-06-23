@@ -11,6 +11,8 @@ import { restoreZaloSessions, initZaloSession, closeZaloSession, syncZaloChat, s
 import { logger, log } from './logger.js';
 import { startScheduler, runQueueWorker, runZaloCampaignWorker } from './scheduler.js';
 import { sendDailyReport } from './email.js';
+import { startReEvaluatorWorker } from './re-evaluator.js';
+
 
 
 
@@ -746,6 +748,7 @@ dbReady.then(() => {
   app.listen(PORT, () => {
     console.log(`Server started on http://localhost:${PORT}`);
     startScheduler();
+    startReEvaluatorWorker();
     restoreZaloSessions().then(() => log('Khôi phục xong các phiên kết nối Zalo đã lưu.'));
   });
 }).catch(err => {

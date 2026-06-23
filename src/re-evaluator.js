@@ -1,0 +1,107 @@
+import { all, run, get } from './database.js';
+import { fetchWebContent, evaluateRelevance } from './scraper.js';
+import { log } from './logger.js';
+
+let isReEvaluating = false;
+
+export async function startReEvaluatorWorker() {
+  log('[Re-Evaluator] Khởi động bộ lập lịch tra soát dữ liệu cũ tự động...');
+  
+  // Run immediately on startup, then check every 15 minutes
+  runReEvaluationCycle().catch(err => {
+    log(`[Re-Evaluator Error] Lỗi vòng chạy: ${err.message}`);
+  });
+
+  setInterval(() => {
+    runReEvaluationCycle().catch(err => {
+      log(`[Re-Evaluator Error] Lỗi vòng chạy: ${err.message}`);
+    });
+  }, 15 * 60 * 1000); // 15 minutes
+}
+
+async function runReEvaluationCycle() {
+  if (isReEvaluating) {
+    log('[Re-Evaluator] Vòng chạy trước vẫn đang xử lý. Bỏ qua chu kỳ này.');
+    return;
+  }
+
+  isReEvaluating = true;
+  log('[Re-Evaluator] Bắt đầu quét các địa điểm cũ chưa được chấm điểm...');
+
+  try {
+    // Select leads that don't have new scoring note [Điểm: ...]
+    const unscoredLeads = await all(
+      `SELECT * FROM leads 
+       WHERE verification_notes IS NULL 
+          OR (verification_notes NOT LIKE '[Điểm:%' AND verification_notes NOT LIKE 'Được phê duyệt thủ công%' AND verification_notes NOT LIKE 'Bị bác bỏ bởi%')
+       ORDER BY id ASC`
+    );
+
+    if (unscoredLeads.length === 0) {
+      log('[Re-Evaluator] Không phát hiện địa điểm cũ nào chưa được chấm điểm.');
+      isReEvaluating = false;
+      return;
+    }
+
+    log(`[Re-Evaluator] Phát hiện ${unscoredLeads.length} địa điểm cũ cần chấm điểm lại. Tiến hành xử lý ngầm (giãn cách 4s để tránh nghẽn)...`);
+
+    for (let i = 0; i < unscoredLeads.length; i++) {
+      const lead = unscoredLeads[i];
+      
+      // Delay between fetches to be gentle on target websites
+      if (i > 0) {
+        await new Promise(r => setTimeout(r, 4000));
+      }
+
+      try {
+        log(`[Re-Evaluator] [${i + 1}/${unscoredLeads.length}] Đang xử lý: ${lead.brand_name} (ID: ${lead.id})`);
+        
+        let webContent = '';
+        if (lead.website && lead.website.trim() !== '') {
+          webContent = await fetchWebContent(lead.website, () => {}); // silent fetch
+        }
+
+        // Category is empty for old data, we pass null
+        const relResult = evaluateRelevance(
+          lead.brand_name,
+          lead.address,
+          null, // No category in old leads
+          lead.website,
+          webContent,
+          () => {} // silent log
+        );
+
+        // Keep status if already confirmed (verified, partially_verified, invalid)
+        let finalStatus = relResult.status;
+        const preserveStatuses = ['verified', 'partially_verified', 'invalid'];
+        
+        if (preserveStatuses.includes(lead.verification_status)) {
+          finalStatus = lead.verification_status;
+          log(`[Re-Evaluator] Bảo lưu trạng thái gốc "${lead.verification_status}" cho ID ${lead.id}. (Điểm chấm lại: ${relResult.score})`);
+        } else {
+          log(`[Re-Evaluator] Cập nhật trạng thái ID ${lead.id}: "${lead.verification_status}" -> "${finalStatus}" (Điểm: ${relResult.score})`);
+        }
+
+        const newNotes = `[Điểm: ${relResult.score}] ${relResult.reason}`;
+
+        await run(
+          `UPDATE leads 
+           SET verification_status = ?, 
+               verification_notes = ?, 
+               updated_at = CURRENT_TIMESTAMP 
+           WHERE id = ?`,
+          [finalStatus, newNotes, lead.id]
+        );
+
+      } catch (err) {
+        log(`[Re-Evaluator] Lỗi khi xử lý lead ID ${lead.id}: ${err.message}`);
+      }
+    }
+
+    log('[Re-Evaluator] Hoàn thành chu kỳ tra soát dữ liệu cũ.');
+  } catch (err) {
+    log(`[Re-Evaluator] Lỗi tiến trình tra soát: ${err.message}`);
+  } finally {
+    isReEvaluating = false;
+  }
+}
