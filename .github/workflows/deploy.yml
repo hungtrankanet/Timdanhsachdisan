@@ -78,11 +78,11 @@ jobs:
             fi
 
             echo "⚡ Xóa bỏ container cũ nếu trùng tên hoặc kẹt cổng..."
-            docker-compose -p Timdanhsachdisan -f docker-compose.prod.yml down || true
+            docker-compose -p timdanhsachdisan -f docker-compose.prod.yml down || true
             docker rm -f lacquer_heritage_scraper || true
             
             echo "🏗️ Xây dựng lại ứng dụng bằng Docker Compose..."
-            docker-compose -p Timdanhsachdisan -f docker-compose.prod.yml up -d --build
+            docker-compose -p timdanhsachdisan -f docker-compose.prod.yml up -d --build
             
             echo "🧹 Thu dọn dữ liệu rác, giải phóng dung lượng VPS..."
             docker image prune -f
