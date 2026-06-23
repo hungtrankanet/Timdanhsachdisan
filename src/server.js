@@ -86,6 +86,31 @@ app.post('/api/leads/pending_review/reject-all', async (req, res) => {
   }
 });
 
+// 1g. API: Delete a single lead
+app.delete('/api/leads/:id', async (req, res) => {
+  try {
+    await run("DELETE FROM leads WHERE id = ?", [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 1h. API: Bulk delete leads
+app.post('/api/leads/bulk-delete', async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'Danh sách ID không hợp lệ.' });
+    }
+    const placeholders = ids.map(() => '?').join(',');
+    await run(`DELETE FROM leads WHERE id IN (${placeholders})`, ids);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 2. API: Save config key-value
 app.post('/api/config', async (req, res) => {
   const { key, value } = req.body;

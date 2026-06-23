@@ -119,6 +119,22 @@ function renderLeadsPage() {
 
   const filterSelect = document.getElementById('lead-status-filter');
   const filterVal = filterSelect ? filterSelect.value : 'all';
+  const bulkDeleteBtn = document.getElementById('btn-bulk-delete-filtered');
+
+  const showBulkDeleteFor = ['pending_review', 'partially_verified', 'ready_zalo', 'verified'];
+  if (bulkDeleteBtn) {
+    if (showBulkDeleteFor.includes(filterVal)) {
+      bulkDeleteBtn.style.display = 'inline-block';
+      let displayFilterText = '';
+      if (filterVal === 'pending_review') displayFilterText = 'Chờ duyệt';
+      else if (filterVal === 'partially_verified') displayFilterText = 'Khớp 1 phần';
+      else if (filterVal === 'ready_zalo') displayFilterText = 'Sẵn sàng qua Zalo';
+      else if (filterVal === 'verified') displayFilterText = 'Đã xác thực';
+      bulkDeleteBtn.textContent = `Xóa toàn bộ [${displayFilterText}]`;
+    } else {
+      bulkDeleteBtn.style.display = 'none';
+    }
+  }
 
   if (filterVal === 'ready_zalo') {
     activeLeadsList = allLeads.filter(lead => 
@@ -230,6 +246,7 @@ function renderLeadsPage() {
         <div class="table-actions">
           <button class="btn btn-primary-outline btn-sm" onclick="verifySingleLead(${lead.id})">Xác thực</button>
           <button class="btn btn-secondary btn-sm" onclick="sendZaloSingleLead(${lead.id})">Gửi Zalo</button>
+          <button class="btn btn-primary-outline btn-sm" style="border-color: var(--accent-red); color: var(--accent-red);" onclick="deleteSingleLead(${lead.id})">Xóa</button>
         </div>
       </td>
     `;
@@ -1200,6 +1217,11 @@ function setupEventListeners() {
       renderLeadsPage();
     });
   }
+  
+  const btnBulkDelete = document.getElementById('btn-bulk-delete-filtered');
+  if (btnBulkDelete) {
+    btnBulkDelete.addEventListener('click', deleteFilteredLeads);
+  }
   setupStaffUI();
   setupPendingReviewUI();
 
@@ -1335,4 +1357,59 @@ function parseDateSafe(dateStr) {
 // Expose functions to global window for onclick inline binders
 window.verifySingleLead = verifySingleLead;
 window.sendZaloSingleLead = sendZaloSingleLead;
+window.deleteSingleLead = deleteSingleLead;
+
+async function deleteSingleLead(id) {
+  if (!confirm('Bạn có chắc chắn muốn xóa liên hệ này khỏi cơ sở dữ liệu?')) return;
+  try {
+    const res = await fetch(`/api/leads/${id}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast('Đã xóa liên hệ thành công!', 'success');
+      loadLeads();
+    } else {
+      throw new Error(data.error || 'Failed to delete');
+    }
+  } catch (err) {
+    showToast(`Lỗi khi xóa: ${err.message}`, 'error');
+  }
+}
+
+async function deleteFilteredLeads() {
+  const filterSelect = document.getElementById('lead-status-filter');
+  const filterVal = filterSelect ? filterSelect.value : 'all';
+  
+  let displayFilterText = '';
+  if (filterVal === 'pending_review') displayFilterText = 'Chờ duyệt';
+  else if (filterVal === 'partially_verified') displayFilterText = 'Khớp 1 phần';
+  else if (filterVal === 'ready_zalo') displayFilterText = 'Sẵn sàng qua Zalo';
+  else if (filterVal === 'verified') displayFilterText = 'Đã xác thực';
+  
+  if (!displayFilterText) return;
+  if (activeLeadsList.length === 0) {
+    showToast('Danh sách trống, không có gì để xóa!', 'error');
+    return;
+  }
+  
+  const confirmMsg = `CẢNH BÁO: Bạn có chắc chắn muốn xóa TOÀN BỘ ${activeLeadsList.length} liên hệ đang thuộc bộ lọc [${displayFilterText}] khỏi cơ sở dữ liệu không?\nHành động này không thể hoàn tác!`;
+  if (!confirm(confirmMsg)) return;
+  
+  try {
+    const ids = activeLeadsList.map(lead => lead.id);
+    const res = await fetch('/api/leads/bulk-delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids })
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast(`Đã xóa thành công ${ids.length} liên hệ!`, 'success');
+      loadLeads();
+    } else {
+      throw new Error(data.error || 'Bulk delete failed');
+    }
+  } catch (err) {
+    showToast(`Lỗi khi xóa hàng loạt: ${err.message}`, 'error');
+  }
+}
 
