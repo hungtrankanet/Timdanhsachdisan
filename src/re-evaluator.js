@@ -7,6 +7,22 @@ let isReEvaluating = false;
 export async function startReEvaluatorWorker() {
   log('[Re-Evaluator] Khởi động bộ lập lịch tra soát dữ liệu cũ tự động...');
   
+  // Auto-recover previously rejected/pending framing shops to re-evaluate them under the new rules
+  try {
+    const resetResult = await run(
+      `UPDATE leads 
+       SET verification_status = 'pending_review', 
+           verification_notes = NULL 
+       WHERE (verification_status = 'rejected' OR verification_status = 'pending_review')
+         AND (brand_name LIKE '%khung tranh%' OR brand_name LIKE '%Khung Tranh%')`
+    );
+    if (resetResult && resetResult.changes > 0) {
+      log(`[Re-Evaluator] Đã tự động phục hồi ${resetResult.changes} địa điểm khung tranh bị bỏ lỡ trước đó để chấm điểm lại.`);
+    }
+  } catch (err) {
+    log(`[Re-Evaluator Error] Lỗi khi phục hồi các địa điểm khung tranh cũ: ${err.message}`);
+  }
+
   // Run immediately on startup, then check every 15 minutes
   runReEvaluationCycle().catch(err => {
     log(`[Re-Evaluator Error] Lỗi vòng chạy: ${err.message}`);
