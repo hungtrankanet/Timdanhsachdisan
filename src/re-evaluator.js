@@ -87,13 +87,21 @@ async function runReEvaluationCycle() {
           () => {} // silent log
         );
 
-        // Keep status if already confirmed (verified, partially_verified, invalid)
+        // Keep status if already confirmed (verified, partially_verified)
+        // If it was 'invalid', but scores >= 4 and has a phone, promote to 'partially_verified'
         let finalStatus = relResult.status;
-        const preserveStatuses = ['verified', 'partially_verified', 'invalid'];
         
-        if (preserveStatuses.includes(lead.verification_status)) {
+        if (lead.verification_status === 'verified' || lead.verification_status === 'partially_verified') {
           finalStatus = lead.verification_status;
           log(`[Re-Evaluator] Bảo lưu trạng thái gốc "${lead.verification_status}" cho ID ${lead.id}. (Điểm chấm lại: ${relResult.score})`);
+        } else if (lead.verification_status === 'invalid') {
+          if (relResult.score >= 4 && lead.phone && lead.phone.trim() !== '') {
+            finalStatus = 'partially_verified';
+            log(`[Re-Evaluator] Nâng cấp trạng thái ID ${lead.id}: "invalid" -> "partially_verified" vì là địa điểm tiềm năng cao (Điểm: ${relResult.score})`);
+          } else {
+            finalStatus = 'invalid';
+            log(`[Re-Evaluator] Bảo lưu trạng thái gốc "invalid" cho ID ${lead.id}. (Điểm chấm lại: ${relResult.score})`);
+          }
         } else {
           log(`[Re-Evaluator] Cập nhật trạng thái ID ${lead.id}: "${lead.verification_status}" -> "${finalStatus}" (Điểm: ${relResult.score})`);
         }
