@@ -352,6 +352,76 @@ async function saveEmailConfig() {
   }
 }
 
+async function handleDbUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  if (!confirm('Bạn có chắc chắn muốn tải lên và thay thế cơ sở dữ liệu trên server bằng file cục bộ?')) {
+    e.target.value = '';
+    return;
+  }
+
+  showToast('Đang tải lên cơ sở dữ liệu...', 'info');
+  const token = localStorage.getItem('crm_token');
+
+  try {
+    const res = await fetch('/api/admin/upload-db', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'Authorization': token
+      },
+      body: file
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast('Đã cập nhật database thành công! Đang tải lại trang...', 'success');
+      setTimeout(() => window.location.reload(), 1500);
+    } else {
+      showToast(data.error || 'Lỗi tải lên cơ sở dữ liệu.', 'error');
+    }
+  } catch (err) {
+    showToast(`Lỗi kết nối: ${err.message}`, 'error');
+  } finally {
+    e.target.value = '';
+  }
+}
+
+async function handleZaloSessionsUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  if (!confirm('Bạn có chắc chắn muốn tải lên và ghi đè các session Zalo hiện tại trên server bằng file zip cục bộ?')) {
+    e.target.value = '';
+    return;
+  }
+
+  showToast('Đang tải lên các session Zalo...', 'info');
+  const token = localStorage.getItem('crm_token');
+
+  try {
+    const res = await fetch('/api/admin/upload-zalo-sessions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'Authorization': token
+      },
+      body: file
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast('Đã tải lên và giải nén Zalo sessions thành công!', 'success');
+    } else {
+      showToast(data.error || 'Lỗi tải lên zalo sessions.', 'error');
+    }
+  } catch (err) {
+    showToast(`Lỗi kết nối: ${err.message}`, 'error');
+  } finally {
+    e.target.value = '';
+  }
+}
+
+
 // Staff Management Functions
 let cachedStaffs = [];
 
@@ -917,6 +987,21 @@ function setupEventListeners() {
   
   document.getElementById('btn-refresh-leads').addEventListener('click', loadLeads);
   setupStaffUI();
+
+  // Data sync upload handlers
+  const btnUploadDbTrig = document.getElementById('btn-upload-db-trigger');
+  const inputUploadDb = document.getElementById('input-upload-db');
+  if (btnUploadDbTrig && inputUploadDb) {
+    btnUploadDbTrig.addEventListener('click', () => inputUploadDb.click());
+    inputUploadDb.addEventListener('change', handleDbUpload);
+  }
+
+  const btnUploadZaloTrig = document.getElementById('btn-upload-zalo-trigger');
+  const inputUploadZalo = document.getElementById('input-upload-zalo');
+  if (btnUploadZaloTrig && inputUploadZalo) {
+    btnUploadZaloTrig.addEventListener('click', () => inputUploadZalo.click());
+    inputUploadZalo.addEventListener('change', handleZaloSessionsUpload);
+  }
 
   // Pagination button handlers
   const btnPrev = document.getElementById('btn-prev-page');

@@ -226,6 +226,23 @@
           <button id="btn-save-email" class="btn btn-secondary-outline" style="width: 100%; margin-top: 15px;">Lưu Cấu Hình Email</button>
         </div>
 
+        <!-- 2d. LOCAL DATA SYNC (Admin-only) -->
+        <div class="glass-card panel-card admin-only-field" style="display: none;">
+          <h3>Đồng bộ dữ liệu từ localhost</h3>
+          <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 12px;">Đồng bộ dữ liệu hàng đợi, nhân viên và các phiên đăng nhập Zalo mà không cần dùng SSH/SCP.</p>
+          
+          <div class="form-group" style="margin-bottom: 10px;">
+            <button id="btn-upload-db-trigger" class="btn btn-primary" style="width: 100%; font-size: 12px; padding: 8px;">Tải lên Database (data.db)</button>
+            <input type="file" id="input-upload-db" accept=".db" style="display: none;">
+          </div>
+          
+          <div class="form-group" style="margin-bottom: 0;">
+            <button id="btn-upload-zalo-trigger" class="btn btn-secondary" style="width: 100%; font-size: 12px; padding: 8px;">Tải lên Session Zalo (.zip)</button>
+            <input type="file" id="input-upload-zalo" accept=".zip" style="display: none;">
+          </div>
+        </div>
+
+
 
         <!-- 3. LIVE CONSOLE LOGS -->
         <div class="glass-card panel-card log-panel">

@@ -2,6 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
+import AdmZip from 'adm-zip';
 import { all, run, get, dbReady } from './database.js';
 import { scrapeGoogleMaps } from './scraper.js';
 import { verifyLead } from './verifier.js';
@@ -589,6 +591,68 @@ app.post('/api/users/:id/update', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// 9s. API: Upload Database File (Admin-only)
+app.post('/api/admin/upload-db', express.raw({ type: 'application/octet-stream', limit: '100mb' }), async (req, res) => {
+  const token = req.headers['authorization'];
+  if (!token || !token.startsWith('session_token_lacquer_art_2026_admin')) {
+    return res.status(401).json({ error: 'Mã xác thực không hợp lệ hoặc thiếu quyền Admin.' });
+  }
+
+  try {
+    const dbPath = process.env.DB_PATH || join(__dirname, '../data.db');
+    
+    // Ensure parent folder exists
+    const dbDir = dirname(dbPath);
+    if (!fs.existsSync(dbDir)) {
+      fs.mkdirSync(dbDir, { recursive: true });
+    }
+
+    // Write binary buffer directly to file
+    fs.writeFileSync(dbPath, req.body);
+    log('Đã cập nhật cơ sở dữ liệu data.db thành công từ yêu cầu tải lên.');
+    res.json({ success: true, message: 'Đã tải lên và thay thế file database thành công.' });
+  } catch (err) {
+    log(`Lỗi tải lên database: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 9t. API: Upload Zalo Sessions Zip (Admin-only)
+app.post('/api/admin/upload-zalo-sessions', express.raw({ type: 'application/octet-stream', limit: '100mb' }), async (req, res) => {
+  const token = req.headers['authorization'];
+  if (!token || !token.startsWith('session_token_lacquer_art_2026_admin')) {
+    return res.status(401).json({ error: 'Mã xác thực không hợp lệ hoặc thiếu quyền Admin.' });
+  }
+
+  try {
+    const tempZipPath = join(__dirname, '../temp_sessions.zip');
+    
+    // Write req.body directly as the zip file
+    fs.writeFileSync(tempZipPath, req.body);
+    
+    // Extract using adm-zip
+    const zip = new AdmZip(tempZipPath);
+    const targetDir = join(__dirname, '../zalo_user_data');
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+    
+    zip.extractAllTo(targetDir, true);
+    
+    // Delete temp zip file
+    if (fs.existsSync(tempZipPath)) {
+      fs.unlinkSync(tempZipPath);
+    }
+    
+    log('Đã cập nhật và giải nén thành công session zalo_user_data.');
+    res.json({ success: true, message: 'Đã tải lên và khôi phục Zalo Sessions thành công.' });
+  } catch (err) {
+    log(`Lỗi tải lên Zalo sessions: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 // 10. SSE: Log stream for dashboard
 app.get('/api/logs', (req, res) => {
