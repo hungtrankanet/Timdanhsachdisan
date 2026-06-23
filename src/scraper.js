@@ -1,5 +1,5 @@
 import puppeteer from 'puppeteer';
-import { run } from './database.js';
+import { run, get } from './database.js';
 import { log } from './logger.js';
 
 export function parseAddress(addressStr) {
@@ -144,18 +144,45 @@ export async function scrapeGoogleMaps(query, limit = 20, logCallback = log) {
         if (lead.brand_name) {
           scrapedLeads.push(lead);
           try {
+            // 1. Kiểm tra xem đã có bản ghi nào trùng cả thương hiệu và địa chỉ chưa
+            const existingSamePlace = await get(
+              "SELECT id, phone FROM leads WHERE brand_name = ? AND address = ?",
+              [lead.brand_name, lead.address || '']
+            );
+
+            if (existingSamePlace) {
+              const cleanPhone = lead.phone ? lead.phone.trim() : '';
+              const existingPhone = existingSamePlace.phone ? existingSamePlace.phone.trim() : '';
+
+              if (cleanPhone === existingPhone) {
+                logCallback(`Bản ghi "${lead.brand_name}" tại địa chỉ này với SĐT "${lead.phone}" đã tồn tại hoàn toàn. Bỏ qua.`);
+                await detailPage.close();
+                continue;
+              } else {
+                // Trùng thương hiệu & địa điểm nhưng khác số điện thoại
+                logCallback(`Phát hiện trùng thương hiệu "${lead.brand_name}" và địa điểm nhưng khác SĐT (Cũ: "${existingPhone}", Mới: "${cleanPhone}"). Tiến hành lưu thêm để xác thực.`);
+              }
+            }
+
+            // 2. Kiểm tra xem số điện thoại này đã tồn tại ở bất kỳ bản ghi nào chưa (vì phone là UNIQUE)
+            if (lead.phone) {
+              const existingWithPhone = await get("SELECT id FROM leads WHERE phone = ?", [lead.phone.trim()]);
+              if (existingWithPhone) {
+                logCallback(`Số điện thoại "${lead.phone}" đã tồn tại ở bản ghi khác trong cơ sở dữ liệu. Bỏ qua.`);
+                await detailPage.close();
+                continue;
+              }
+            }
+
+            // 3. Nếu chưa trùng hoàn toàn hoặc có số điện thoại mới, tiến hành lưu vào DB
             await run(
               `INSERT INTO leads (brand_name, phone, website, address, ward, district, city, verification_status, zalo_status) 
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               [lead.brand_name, lead.phone || null, lead.website || null, lead.address || null, lead.ward || null, lead.district || null, lead.city || null, 'unverified', 'pending']
             );
-            logCallback(`Đã lưu "${lead.brand_name}" vào cơ sở dữ liệu.`);
+            logCallback(`Đã lưu "${lead.brand_name}" (SĐT: ${lead.phone || 'Không có'}) vào cơ sở dữ liệu.`);
           } catch (dbErr) {
-            if (dbErr.message.includes('UNIQUE constraint failed')) {
-              logCallback(`Nhãn hiệu "${lead.brand_name}" với SĐT "${lead.phone}" đã tồn tại. Bỏ qua.`);
-            } else {
-              logCallback(`Lỗi DB khi lưu: ${dbErr.message}`);
-            }
+            logCallback(`Lỗi DB khi lưu: ${dbErr.message}`);
           }
         }
 
