@@ -34,6 +34,56 @@ app.get('/api/leads', async (req, res) => {
   }
 });
 
+// 1b. API: List pending review leads
+app.get('/api/leads/pending_review', async (req, res) => {
+  try {
+    const leads = await all("SELECT id, brand_name, phone, website, address, verification_notes, created_at FROM leads WHERE verification_status = 'pending_review' ORDER BY id DESC");
+    res.json(leads);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 1c. API: Approve a lead
+app.post('/api/leads/:id/approve', async (req, res) => {
+  try {
+    await run("UPDATE leads SET verification_status = 'unverified', verification_notes = 'Được phê duyệt thủ công bởi quản trị viên', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 1d. API: Reject a lead
+app.post('/api/leads/:id/reject', async (req, res) => {
+  try {
+    await run("UPDATE leads SET verification_status = 'rejected', verification_notes = 'Bị bác bỏ bởi quản trị viên', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 1e. API: Approve all pending review leads
+app.post('/api/leads/pending_review/approve-all', async (req, res) => {
+  try {
+    await run("UPDATE leads SET verification_status = 'unverified', verification_notes = 'Được phê duyệt hàng loạt bởi quản trị viên', updated_at = CURRENT_TIMESTAMP WHERE verification_status = 'pending_review'");
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 1f. API: Reject all pending review leads
+app.post('/api/leads/pending_review/reject-all', async (req, res) => {
+  try {
+    await run("UPDATE leads SET verification_status = 'rejected', verification_notes = 'Bị bác bỏ hàng loạt bởi quản trị viên', updated_at = CURRENT_TIMESTAMP WHERE verification_status = 'pending_review'");
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 2. API: Save config key-value
 app.post('/api/config', async (req, res) => {
   const { key, value } = req.body;

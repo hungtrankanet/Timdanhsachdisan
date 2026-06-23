@@ -127,6 +127,11 @@ export async function scrapeGoogleMaps(query, limit = 20, logCallback = log) {
 
         const { ward, district, city } = parseAddress(details.address);
         
+        // Kiểm tra độ phù hợp chuyên ngành di sản sơn mài trước khi lưu
+        const isRelevant = await checkRelevance(details.brand_name, details.address, details.website, logCallback);
+        const initialVerifyStatus = isRelevant ? 'unverified' : 'pending_review';
+        const initialVerifyNotes = isRelevant ? null : 'Không khớp từ khóa chuyên ngành di sản sơn mài';
+
         const lead = {
           brand_name: details.brand_name,
           phone: details.phone,
@@ -135,11 +140,12 @@ export async function scrapeGoogleMaps(query, limit = 20, logCallback = log) {
           ward,
           district,
           city,
-          verification_status: 'unverified',
+          verification_status: initialVerifyStatus,
+          verification_notes: initialVerifyNotes,
           zalo_status: 'pending'
         };
 
-        logCallback(`Cào được: ${lead.brand_name} | SĐT: ${lead.phone || 'Không có'} | Web: ${lead.website || 'Không có'}`);
+        logCallback(`Cào được: ${lead.brand_name} | SĐT: ${lead.phone || 'Không có'} | Web: ${lead.website || 'Không có'} | Trạng thái lọc: ${isRelevant ? 'Phù hợp' : 'Chờ duyệt'}`);
         
         if (lead.brand_name) {
           scrapedLeads.push(lead);
@@ -176,11 +182,11 @@ export async function scrapeGoogleMaps(query, limit = 20, logCallback = log) {
 
             // 3. Nếu chưa trùng hoàn toàn hoặc có số điện thoại mới, tiến hành lưu vào DB
             await run(
-              `INSERT INTO leads (brand_name, phone, website, address, ward, district, city, verification_status, zalo_status) 
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-              [lead.brand_name, lead.phone || null, lead.website || null, lead.address || null, lead.ward || null, lead.district || null, lead.city || null, 'unverified', 'pending']
+              `INSERT INTO leads (brand_name, phone, website, address, ward, district, city, verification_status, verification_notes, zalo_status) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [lead.brand_name, lead.phone || null, lead.website || null, lead.address || null, lead.ward || null, lead.district || null, lead.city || null, lead.verification_status, lead.verification_notes, 'pending']
             );
-            logCallback(`Đã lưu "${lead.brand_name}" (SĐT: ${lead.phone || 'Không có'}) vào cơ sở dữ liệu.`);
+            logCallback(`Đã lưu "${lead.brand_name}" (SĐT: ${lead.phone || 'Không có'}, Trạng thái: ${lead.verification_status}) vào cơ sở dữ liệu.`);
           } catch (dbErr) {
             logCallback(`Lỗi DB khi lưu: ${dbErr.message}`);
           }
@@ -202,4 +208,69 @@ export async function scrapeGoogleMaps(query, limit = 20, logCallback = log) {
   } finally {
     await browser.close();
   }
+}
+
+export async function checkRelevance(brandName, address, websiteUrl, logCallback = log) {
+  const keywords = [
+    'sơn mài', 'son mai', 'lacquer', 'tranh vẽ', 'painting', 'mỹ nghệ', 'my nghe', 
+    'art', 'hội họa', 'hoi hoa', 'mỹ thuật', 'my thuat', 'khảm trai', 'kham trai', 
+    'tranh nghệ thuật', 'gallery', 'triển lãm', 'tác phẩm', 'di sản', 'heritage'
+  ];
+
+  // 1. Kiểm tra trên Tên thương hiệu và Địa chỉ trước
+  const combinedInfo = `${brandName || ''} ${address || ''}`;
+  if (hasKeywords(combinedInfo, keywords)) {
+    logCallback(`[Lọc độ phù hợp] Khớp từ khóa trên thương hiệu/địa chỉ của: "${brandName}"`);
+    return true;
+  }
+
+  // 2. Nếu có Website, cào thử website để tìm từ khóa
+  if (websiteUrl && websiteUrl.trim() !== '') {
+    let url = websiteUrl.trim();
+    if (!/^https?:\/\//i.test(url)) {
+      url = 'http://' + url;
+    }
+    
+    logCallback(`[Lọc độ phù hợp] Đang tải trang chủ website để kiểm tra từ khóa: ${url}`);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 seconds timeout
+      
+      const response = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        const html = await response.text();
+        const textContent = extractTextFromHtml(html);
+        if (hasKeywords(textContent, keywords)) {
+          logCallback(`[Lọc độ phù hợp] Khớp từ khóa trên website của: "${brandName}"`);
+          return true;
+        }
+      } else {
+        logCallback(`[Lọc độ phù hợp] Tải website thất bại (HTTP ${response.status}) cho: ${url}`);
+      }
+    } catch (err) {
+      logCallback(`[Lọc độ phù hợp] Lỗi khi quét website ${url}: ${err.message}`);
+    }
+  }
+
+  logCallback(`[Lọc độ phù hợp] Không khớp từ khóa chuyên ngành di sản sơn mài cho: "${brandName}"`);
+  return false;
+}
+
+function extractTextFromHtml(html) {
+  let text = html.replace(/<script[^>]*>([\s\S]*?)<\/script>/gi, '');
+  text = text.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, '');
+  text = text.replace(/<[^>]+>/g, ' ');
+  text = text.replace(/\s+/g, ' ');
+  return text.trim();
+}
+
+function hasKeywords(text, keywords) {
+  const lowerText = text.toLowerCase();
+  return keywords.some(kw => lowerText.includes(kw.toLowerCase()));
 }

@@ -140,9 +140,14 @@ function renderLeadsPage() {
       verifyBadge = '<span class="badge badge-warning">Khớp 1 phần</span>';
     } else if (lead.verification_status === 'invalid') {
       verifyBadge = '<span class="badge badge-error">Lỗi thông tin</span>';
+    } else if (lead.verification_status === 'pending_review') {
+      verifyBadge = '<span class="badge badge-warning">Chờ duyệt</span>';
+    } else if (lead.verification_status === 'rejected') {
+      verifyBadge = '<span class="badge badge-error">Bác bỏ</span>';
     } else {
       verifyBadge = '<span class="badge badge-pending">Chưa xác thực</span>';
     }
+
 
     // Zalo Status Badge
     let zaloBadge = '';
@@ -617,6 +622,130 @@ window.startEditStaff = startEditStaff;
 window.cancelEditStaff = cancelEditStaff;
 
 
+// Pending Review Management Functions
+function setupPendingReviewUI() {
+  const btnManage = document.getElementById('btn-manage-pending');
+  const modal = document.getElementById('pending-modal');
+  const btnClose = document.getElementById('btn-close-pending-modal');
+  const btnApproveAll = document.getElementById('btn-approve-all-pending');
+  const btnRejectAll = document.getElementById('btn-reject-all-pending');
+
+  if (btnManage) {
+    btnManage.addEventListener('click', () => {
+      modal.style.display = 'flex';
+      loadPendingLeads();
+    });
+  }
+
+  if (btnClose) {
+    btnClose.addEventListener('click', () => {
+      modal.style.display = 'none';
+    });
+  }
+
+  if (btnApproveAll) {
+    btnApproveAll.addEventListener('click', approveAllPending);
+  }
+
+  if (btnRejectAll) {
+    btnRejectAll.addEventListener('click', rejectAllPending);
+  }
+}
+
+async function loadPendingLeads() {
+  const tbody = document.getElementById('pending-tbody');
+  if (!tbody) return;
+  
+  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Đang tải danh sách chờ duyệt...</td></tr>';
+  
+  try {
+    const res = await fetch('/api/leads/pending_review');
+    if (!res.ok) throw new Error('Không thể tải danh sách chờ duyệt');
+    const leads = await res.json();
+    
+    tbody.innerHTML = '';
+    if (leads.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color: var(--text-muted);">Không có địa điểm nào đang chờ duyệt.</td></tr>';
+      return;
+    }
+    
+    leads.forEach(lead => {
+      const tr = document.createElement('tr');
+      
+      tr.innerHTML = `
+        <td style="font-weight:600;">${lead.brand_name}</td>
+        <td>${lead.phone || '<span class="text-muted">Không có</span>'}</td>
+        <td>${lead.address || '<span class="text-muted">Không có</span>'}</td>
+        <td><span style="color: var(--text-muted); font-size: 11px;">${lead.verification_notes || ''}</span></td>
+        <td style="text-align: right;">
+          <div style="display: flex; justify-content: flex-end; gap: 5px;">
+            <button class="btn btn-secondary btn-sm" onclick="approveLead(${lead.id})">Duyệt</button>
+            <button class="btn btn-primary-outline btn-sm" style="border-color: var(--accent-red); color: var(--accent-red);" onclick="rejectLead(${lead.id})">Bác bỏ</button>
+          </div>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color: var(--accent-red);">${err.message}</td></tr>`;
+  }
+}
+
+async function approveLead(id) {
+  try {
+    const res = await fetch(`/api/leads/${id}/approve`, { method: 'POST' });
+    if (!res.ok) throw new Error('Không thể phê duyệt địa điểm');
+    showToast('Đã phê duyệt địa điểm thành công!', 'success');
+    loadPendingLeads();
+    loadLeads();
+  } catch (err) {
+    showToast(`Lỗi: ${err.message}`, 'error');
+  }
+}
+
+async function rejectLead(id) {
+  if (!confirm('Bạn có chắc chắn muốn bác bỏ địa điểm này?')) return;
+  try {
+    const res = await fetch(`/api/leads/${id}/reject`, { method: 'POST' });
+    if (!res.ok) throw new Error('Không thể bác bỏ địa điểm');
+    showToast('Đã bác bỏ địa điểm thành công!', 'success');
+    loadPendingLeads();
+    loadLeads();
+  } catch (err) {
+    showToast(`Lỗi: ${err.message}`, 'error');
+  }
+}
+
+async function approveAllPending() {
+  if (!confirm('Bạn có chắc chắn muốn phê duyệt tất cả các địa điểm đang chờ duyệt?')) return;
+  try {
+    const res = await fetch('/api/leads/pending_review/approve-all', { method: 'POST' });
+    if (!res.ok) throw new Error('Không thể phê duyệt hàng loạt');
+    showToast('Đã phê duyệt tất cả địa điểm đang chờ duyệt!', 'success');
+    loadPendingLeads();
+    loadLeads();
+  } catch (err) {
+    showToast(`Lỗi: ${err.message}`, 'error');
+  }
+}
+
+async function rejectAllPending() {
+  if (!confirm('Bạn có chắc chắn muốn bác bỏ tất cả các địa điểm đang chờ duyệt?')) return;
+  try {
+    const res = await fetch('/api/leads/pending_review/reject-all', { method: 'POST' });
+    if (!res.ok) throw new Error('Không thể bác bỏ hàng loạt');
+    showToast('Đã bác bỏ tất cả địa điểm đang chờ duyệt!', 'success');
+    loadPendingLeads();
+    loadLeads();
+  } catch (err) {
+    showToast(`Lỗi: ${err.message}`, 'error');
+  }
+}
+
+window.approveLead = approveLead;
+window.rejectLead = rejectLead;
+
+
 // 3. Save config
 async function saveConfig() {
   const btn = document.getElementById('btn-save-sheet');
@@ -1030,6 +1159,7 @@ function setupEventListeners() {
   
   document.getElementById('btn-refresh-leads').addEventListener('click', loadLeads);
   setupStaffUI();
+  setupPendingReviewUI();
 
   // Data sync upload handlers
   const btnUploadDbTrig = document.getElementById('btn-upload-db-trigger');
