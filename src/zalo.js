@@ -23,6 +23,25 @@ export async function isZaloLoggedIn(accountId = 'default') {
   }
 }
 
+function cleanChromeLock(sessionDir, logCallback = log) {
+  try {
+    const lockFiles = ['SingletonLock', 'SingletonCookie', 'SingletonSocket'];
+    for (const file of lockFiles) {
+      const lockPath = join(sessionDir, file);
+      try {
+        if (fs.existsSync(lockPath) || fs.lstatSync(lockPath)) {
+          fs.unlinkSync(lockPath);
+          logCallback(`[Zalo Init] Đã dọn dẹp file lock Chrome: ${file}`);
+        }
+      } catch (e) {
+        // File doesn't exist or ignore
+      }
+    }
+  } catch (err) {
+    console.error('[Zalo Init] Lỗi dọn dẹp file lock Chrome:', err.message);
+  }
+}
+
 export async function initZaloSession(accountId = 'default', logCallback = log, headless = true) {
   if (activeSessions.has(accountId)) {
     try {
@@ -44,17 +63,32 @@ export async function initZaloSession(accountId = 'default', logCallback = log, 
     fs.mkdirSync(userDataDir, { recursive: true });
   }
 
-  const browser = await puppeteer.launch({
-    headless: runHeadless,
-    userDataDir: sessionDir,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-notifications',
-      '--window-size=1280,800'
-    ]
-  });
+  // Dọn dẹp lock trước khi launch
+  cleanChromeLock(sessionDir, logCallback);
+
+  let browser;
+  try {
+    browser = await puppeteer.launch({
+      headless: runHeadless,
+      userDataDir: sessionDir,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-notifications',
+        '--window-size=1280,800'
+      ]
+    });
+  } catch (err) {
+    logCallback(`[LỖI KHỞI CHẠY BROWSER] Thất bại khi mở Zalo ID ${accountId}: ${err.message}`);
+    if (err.message.includes('shared libraries') || err.message.includes('libnss3.so') || err.message.includes('Failed to launch')) {
+      logCallback(`[HƯỚNG DẪN KHẮC PHỤC] VPS của bạn thiếu các thư viện chạy Chrome headless.`);
+      logCallback(`Hãy chạy lệnh sau trên Terminal của VPS (Ubuntu/Debian) để sửa lỗi:`);
+      logCallback(`sudo apt-get update && sudo apt-get install -y ca-certificates fonts-liberation libasound2 libatk-bridge2.0-0 libatk1.0-0 libc6 libcairo2 libcups2 libdbus-1-3 libexpat1 libfontconfig1 libgbm1 libgcc1 libgconf-2-4 libgdk-pixbuf2.0-0 libglib2.0-0 libgtk-3-0 libnspr4 libnss3 libpango-1.0-0 libpangocairo-1.0-0 libstdc++6 libx11-6 libx11-xcb1 libxcb1 libxcomposite1 libxcursor1 libxdamage1 libxext6 libxfixes3 libxi6 libxrandr2 libxrender1 libxss1 libxtst6 lsb-release xdg-utils wget`);
+    }
+    throw err;
+  }
+
 
 
   const page = (await browser.pages())[0] || await browser.newPage();
