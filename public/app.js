@@ -1093,7 +1093,11 @@ function setupLogStream() {
   
   source.onmessage = (event) => {
     const data = JSON.parse(event.data);
-    appendConsole(data.message);
+    if (data.type === 'zalo') {
+      appendZaloConsole(data.message);
+    } else {
+      appendConsole(data.message);
+    }
     // Refresh leads table on success steps
     if (data.message.includes('Lưu') || data.message.includes('hoàn tất') || data.message.includes('nhận')) {
       loadLeads();
@@ -1111,6 +1115,18 @@ function setupLogStream() {
 // Helper: Append line to log console
 function appendConsole(text, type = 'info') {
   const consoleBox = document.getElementById('log-console');
+  if (!consoleBox) return;
+  const div = document.createElement('div');
+  div.className = `log-line ${type}`;
+  div.textContent = text;
+  consoleBox.appendChild(div);
+  consoleBox.scrollTop = consoleBox.scrollHeight;
+}
+
+// Helper: Append line to Zalo log console
+function appendZaloConsole(text, type = 'info') {
+  const consoleBox = document.getElementById('zalo-log-console');
+  if (!consoleBox) return;
   const div = document.createElement('div');
   div.className = `log-line ${type}`;
   div.textContent = text;

@@ -7,9 +7,10 @@ import AdmZip from 'adm-zip';
 import { all, run, get, dbReady } from './database.js';
 import { scrapeGoogleMaps } from './scraper.js';
 import { verifyLead } from './verifier.js';
-import { initZaloSession, sendZaloInvite, isZaloLoggedIn, closeZaloSession, syncZaloChat, restoreZaloSessions, sendZaloMessageDirect } from './zalo.js';
+import { restoreZaloSessions, initZaloSession, closeZaloSession, syncZaloChat, sendZaloMessageDirect, isZaloLoggedIn, sendZaloInvite } from './zalo.js';
 import { logger, log } from './logger.js';
-import { startScheduler, runQueueWorker } from './scheduler.js';
+import { startScheduler, runQueueWorker, runZaloCampaignWorker } from './scheduler.js';
+import { sendDailyReport } from './email.js';
 
 
 
@@ -255,7 +256,7 @@ app.post('/api/zalo/campaign/toggle', async (req, res) => {
     await run('INSERT OR REPLACE INTO configs (key, value) VALUES (?, ?)', ['zalo_campaign_status', status]);
     log(`Đã thay đổi trạng thái Chiến dịch Zalo sang: "${status}"`);
     if (status === 'active') {
-      runQueueWorker(); // Trigger worker to start sending immediately
+      runZaloCampaignWorker(); // Trigger Zalo worker to start sending immediately
     }
     res.json({ success: true, status });
   } catch (err) {
@@ -680,8 +681,8 @@ app.get('/api/logs', (req, res) => {
     'Connection': 'keep-alive',
   });
 
-  const onLog = (message) => {
-    res.write(`data: ${JSON.stringify({ message })}\n\n`);
+  const onLog = ({ formatted, type }) => {
+    res.write(`data: ${JSON.stringify({ message: formatted, type })}\n\n`);
   };
 
   logger.on('log', onLog);
