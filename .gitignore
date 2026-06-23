@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+node/
+
+
+# Local databases and SQLite temp files
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Zalo dynamic session data
+zalo_user_data/
+
+# Runtime screenshots and logs
+public/zalo_screenshot.png
+*.log
+logs/
+
+# IDE and OS configurations
+.DS_Store
+.vscode/
+.idea/
+Thumbs.db
+
+# Environments
+.env
+.env.*

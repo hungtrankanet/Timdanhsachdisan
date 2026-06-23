@@ -1,0 +1,262 @@
+/* Zalo Inbox CRM Custom Styles (Lacquer Art Design System) */
+
+/* Tab Switching Layout */
+.tab-view {
+  display: none;
+  animation: fadeIn 0.3s ease;
+}
+
+.tab-view.active-view {
+  display: block;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.header-tabs {
+  display: flex;
+  gap: 10px;
+}
+
+.tab-btn {
+  background: transparent;
+  border: 1px solid var(--card-border);
+  color: var(--text-muted);
+  font-family: var(--font-family-sans);
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 13px;
+}
+
+.tab-btn:hover {
+  color: var(--text-color);
+  border-color: rgba(212, 175, 55, 0.3);
+}
+
+.tab-btn.active {
+  background: linear-gradient(135deg, rgba(193, 39, 45, 0.2), rgba(18, 12, 12, 0.8));
+  border-color: var(--accent-gold);
+  color: var(--accent-gold);
+  box-shadow: 0 0 10px rgba(212, 175, 55, 0.1);
+}
+
+/* Dual Column Inbox Container */
+.inbox-container {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  height: 650px;
+  padding: 0 !important;
+  overflow: hidden;
+  border: 1px solid var(--card-border);
+}
+
+/* Sidebar Conversations List */
+.inbox-sidebar {
+  border-right: 1px solid var(--card-border);
+  display: flex;
+  flex-direction: column;
+  background: rgba(12, 10, 10, 0.5);
+  height: 100%;
+  min-height: 0; /* Prevents overflow stretching */
+}
+
+.inbox-search {
+  padding: 15px;
+  border-bottom: 1px solid var(--card-border);
+}
+
+.inbox-search input {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid var(--card-border);
+  color: var(--text-color);
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.inbox-search input:focus {
+  outline: none;
+  border-color: var(--accent-gold);
+}
+
+.inbox-contact-list {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0; /* Enables vertical scrolling within flex wrapper */
+}
+
+.contact-item {
+  padding: 15px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.contact-item:hover {
+  background: rgba(212, 175, 55, 0.03);
+}
+
+.contact-item.active {
+  background: rgba(193, 39, 45, 0.1);
+  border-left: 3px solid var(--accent-gold);
+}
+
+.contact-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.contact-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
+.contact-time {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.contact-last-msg {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+/* Right Chat Area */
+.inbox-chat-area {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: rgba(12, 10, 10, 0.2);
+}
+
+.chat-placeholder {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 14px;
+}
+
+/* Chat Area Header */
+.chat-header {
+  padding: 15px 20px;
+  border-bottom: 1px solid var(--card-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(18, 12, 12, 0.8);
+}
+
+.chat-header-info h3 {
+  font-family: var(--font-family-serif);
+  font-size: 17px;
+  color: var(--accent-gold);
+  margin-bottom: 2px;
+}
+
+.chat-header-info p {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Chat Body (Message Scroll Box) */
+.chat-messages {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  background: radial-gradient(circle at center, #150e0e 0%, #0c0a0a 100%);
+}
+
+/* Message Bubbles */
+.message-row {
+  display: flex;
+  width: 100%;
+}
+
+.message-row.me {
+  justify-content: flex-end;
+}
+
+.message-row.client {
+  justify-content: flex-start;
+}
+
+.message-bubble {
+  max-width: 65%;
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  position: relative;
+  word-wrap: break-word;
+}
+
+.message-row.me .message-bubble {
+  background-color: var(--accent-red);
+  color: #fff;
+  border-bottom-right-radius: 2px;
+  border-right: 3px solid var(--accent-gold);
+  box-shadow: 0 4px 10px rgba(193, 39, 45, 0.2);
+}
+
+.message-row.client .message-bubble {
+  background-color: #222222;
+  color: #fff;
+  border-bottom-left-radius: 2px;
+  border-left: 3px solid var(--text-muted);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+}
+
+.message-time-stamp {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.4);
+  margin-top: 5px;
+  text-align: right;
+  display: block;
+}
+
+/* Custom Scrollbar for Sidebar & Chat area */
+.inbox-contact-list::-webkit-scrollbar,
+.chat-messages::-webkit-scrollbar {
+  width: 6px;
+}
+
+.inbox-contact-list::-webkit-scrollbar-track,
+.chat-messages::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.inbox-contact-list::-webkit-scrollbar-thumb,
+.chat-messages::-webkit-scrollbar-thumb {
+  background: rgba(212, 175, 55, 0.2);
+  border-radius: 3px;
+}
+
+.inbox-contact-list::-webkit-scrollbar-thumb:hover,
+.chat-messages::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-gold);
+}

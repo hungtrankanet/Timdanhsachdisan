@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trăm Năm Di Sản Sơn Mài - Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Playfair+Display:ital,wght@0,600;0,800;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="inbox.css">
+</head>
+<body>
+  <!-- Login Screen Overlay -->
+  <div id="login-overlay" class="modal-overlay" style="display: flex; background: var(--bg-color); z-index: 100000;">
+    <div class="glass-card" style="width: 400px; padding: 40px; border-color: var(--accent-gold); text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.8); margin: auto;">
+      <div style="margin-bottom: 30px;">
+        <h2 class="gold-text-logo" style="font-size: 26px; margin-bottom: 5px;">TRĂM NĂM DI SẢN</h2>
+        <span class="sub-logo" style="font-size: 11px; color: var(--text-muted); display: block;">Hệ thống quản trị Zalo CRM</span>
+      </div>
+      <form id="login-form" onsubmit="handleLogin(event)">
+        <div class="form-group" style="text-align: left;">
+          <label for="login-username">Tên đăng nhập</label>
+          <input type="text" id="login-username" required placeholder="admin" value="admin">
+        </div>
+        <div class="form-group" style="text-align: left; margin-bottom: 25px;">
+          <label for="login-password">Mật khẩu</label>
+          <input type="password" id="login-password" required placeholder="••••••••" value="Toluckphattrien2026">
+        </div>
+        <div id="login-error-msg" style="color: var(--accent-red); font-size: 13px; margin-bottom: 15px; display: none;">
+          Tên đăng nhập hoặc mật khẩu không đúng!
+        </div>
+        <button type="submit" class="btn btn-secondary" style="width: 100%; padding: 12px; font-size: 15px;">Đăng Nhập</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="app-container">
+    <header class="app-header">
+      <div class="header-logo">
+        <span class="gold-text-logo">TRĂM NĂM DI SẢN</span>
+        <span class="sub-logo">Hội họa & Sơn mài Việt Nam</span>
+      </div>
+      <div class="header-tabs">
+        <button id="btn-tab-dashboard" class="tab-btn active">Bảng điều khiển</button>
+        <button id="btn-tab-inbox" class="tab-btn">Hộp thư Zalo</button>
+      </div>
+      <div class="header-actions">
+        <span id="zalo-status-badge" class="badge badge-error">Zalo: 0 hoạt động</span>
+        <button id="btn-manage-staff" class="btn btn-secondary-outline btn-sm admin-only-field" style="display: none;">Quản lý nhân viên</button>
+        <button id="btn-manage-zalo" class="btn btn-secondary">Quản lý Zalo</button>
+        <button id="btn-logout" class="btn btn-primary-outline btn-sm">Đăng xuất</button>
+      </div>
+    </header>
+
+    <!-- System Status Banner -->
+    <div id="system-status-banner" class="glass-card status-banner" style="margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; border-color: var(--accent-gold);">
+      <div style="display: flex; align-items: center; gap: 15px;">
+        <span id="system-status-dot" class="status-indicator-dot glowing-green"></span>
+        <div>
+          <h4 id="system-status-title" style="font-size: 15px; font-weight: 600; color: #fff;">Hệ thống tự động: Đang hoạt động</h4>
+          <p id="system-current-task" style="font-size: 12px; color: var(--text-muted);">Đang chạy ngầm hàng đợi cào dữ liệu...</p>
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 25px;">
+        <button id="btn-toggle-automation" class="btn btn-primary btn-sm">Tạm Dừng Tự Động</button>
+        <div style="border-left: 1px solid var(--card-border); height: 30px; margin: 0 5px;"></div>
+        <div style="text-align: right;">
+          <span style="font-size: 11px; color: var(--text-muted); display: block;">GOOGLE SHEETS</span>
+          <span id="status-sheet-badge" style="font-size: 13px; font-weight: 600; color: var(--accent-red);">Chưa cấu hình</span>
+        </div>
+        <div style="text-align: right;">
+          <span style="font-size: 11px; color: var(--text-muted); display: block;">ZALO WEB</span>
+          <span id="status-zalo-badge" style="font-size: 13px; font-weight: 600; color: var(--accent-red);">Chưa kết nối</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="view-dashboard" class="tab-view active-view">
+      <div class="grid-layout">
+        <!-- MAIN CONTAINER: LEADS & QUEUES -->
+        <main class="main-content">
+        <!-- Card 1: Leads list -->
+        <div class="glass-card" style="margin-bottom: 25px;">
+          <div class="card-header">
+            <h2>Danh sách nghệ nhân & Cửa hàng</h2>
+            <div class="lead-actions">
+              <button id="btn-refresh-leads" class="btn btn-primary-outline">Làm mới dữ liệu</button>
+            </div>
+          </div>
+          <div class="table-wrapper">
+            <table id="leads-table">
+              <thead>
+                <tr>
+                  <th>Tên thương hiệu/Nghệ nhân</th>
+                  <th>Điện thoại</th>
+                  <th>Website/Facebook</th>
+                  <th>Vị trí (Phường/Quận/Tỉnh)</th>
+                  <th>Xác thực</th>
+                  <th>Trạng thái Zalo</th>
+                  <th>Thao tác</th>
+                </tr>
+              </thead>
+              <tbody id="leads-tbody">
+                <tr>
+                  <td colspan="7" class="loading-cell">Đang tải dữ liệu...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pagination-container" style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px; padding-top: 15px; border-top: 1px dashed rgba(255,255,255,0.05);">
+            <div style="font-size: 13px; color: var(--text-muted);">
+              Hiển thị <span id="leads-pagination-info">0 - 0 của 0</span> liên hệ
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button id="btn-prev-page" class="btn btn-primary-outline btn-sm">Trang trước</button>
+              <span id="current-page-num" style="display: inline-flex; align-items: center; font-weight: 600; font-size: 13px; padding: 0 10px; color: var(--accent-gold);">Trang 1</span>
+              <button id="btn-next-page" class="btn btn-primary-outline btn-sm">Trang sau</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 2: Scraper Queue -->
+        <div class="glass-card">
+          <div class="card-header">
+            <h2>Hàng đợi cào dữ liệu (Crawler Queue)</h2>
+            <div class="lead-actions" style="display: flex; gap: 10px;">
+              <input type="text" id="queue-keyword" placeholder="Từ khóa (vd: sơn mài)" style="background: rgba(0,0,0,0.5); border: 1px solid var(--card-border); padding: 6px 10px; border-radius: 6px; color: #fff; font-size: 12px; width: 140px;">
+              <input type="text" id="queue-location" placeholder="Địa điểm (vd: Quận 1, HCM)" style="background: rgba(0,0,0,0.5); border: 1px solid var(--card-border); padding: 6px 10px; border-radius: 6px; color: #fff; font-size: 12px; width: 160px;">
+              <button id="btn-add-queue" class="btn btn-secondary btn-sm">Thêm Hàng Đợi</button>
+            </div>
+          </div>
+          <div class="table-wrapper" style="max-height: 350px; overflow-y: auto;">
+            <table id="queue-table">
+              <thead>
+                <tr>
+                  <th>Từ khóa</th>
+                  <th>Địa điểm</th>
+                  <th>Kết quả cào</th>
+                  <th>Trạng thái</th>
+                  <th>Cập nhật cuối</th>
+                </tr>
+              </thead>
+              <tbody id="queue-tbody">
+                <tr>
+                  <td colspan="5" class="loading-cell">Đang tải hàng đợi...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </main>
+
+      <!-- SIDEBAR PANEL -->
+      <aside class="sidebar">
+        <!-- 1. SCRAPER PANEL -->
+        <div class="glass-card panel-card">
+          <h3>Công cụ cào Google Maps</h3>
+          <div class="form-group">
+            <label for="search-query">Từ khóa tìm kiếm</label>
+            <input type="text" id="search-query" placeholder="Ví dụ: nghệ nhân sơn mài Hà Nội" value="nghệ nhân sơn mài Hà Nội">
+          </div>
+          <div class="form-group">
+            <label for="search-limit">Giới hạn kết quả</label>
+            <input type="number" id="search-limit" min="1" max="100" value="10">
+          </div>
+          <button id="btn-start-scrape" class="btn btn-primary" style="width: 100%;">Bắt đầu cào dữ liệu</button>
+          <button id="btn-force-scheduler" class="btn btn-secondary" style="margin-top: 10px; width: 100%;">Kích hoạt Tự Động Hàng Ngày</button>
+        </div>
+
+        <!-- 2. GOOGLE SHEETS SETTINGS -->
+        <div class="glass-card panel-card">
+          <h3>Đồng bộ Google Sheets</h3>
+          <div class="form-group">
+            <label for="sheets-url">Google Apps Script Web App URL</label>
+            <input type="url" id="sheets-url" placeholder="https://script.google.com/macros/s/.../exec">
+          </div>
+          <div class="form-group">
+            <label for="sheets-token">Mã khóa bảo mật (Token)</label>
+            <input type="text" id="sheets-token" placeholder="Nhập khóa bảo mật" value="Toluckphattrien2026">
+          </div>
+          <button id="btn-save-sheet" class="btn btn-secondary-outline">Lưu cài đặt</button>
+        </div>
+
+        <!-- 2b. N8N CHATBOT WEBHOOK SETTINGS -->
+        <div class="glass-card panel-card admin-only-field" style="display: none;">
+          <h3>Cấu hình Chatbot n8n</h3>
+          <div class="form-group">
+            <label for="chatbot-webhook-url">URL Webhook Phản Hồi n8n</label>
+            <input type="url" id="chatbot-webhook-url" placeholder="https://primary-production.up.railway.app/webhook/...">
+          </div>
+          <div class="form-group">
+            <label for="chatbot-webhook-token">Khóa Bảo Mật Webhook (Token)</label>
+            <input type="text" id="chatbot-webhook-token" placeholder="n8n_zalo_secure_token_2026">
+          </div>
+          <button id="btn-save-chatbot" class="btn btn-secondary-outline">Lưu Cấu Hình Chatbot</button>
+        </div>
+
+        <!-- 3. LIVE CONSOLE LOGS -->
+        <div class="glass-card panel-card log-panel">
+          <h3>Nhật ký hệ thống (Live)</h3>
+          <div id="log-console" class="console-box">
+            <div class="log-line system">[Hệ thống] Dashboard đã sẵn sàng.</div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- Zalo Inbox CRM Tab View -->
+  <div id="view-inbox" class="tab-view">
+    <div class="inbox-container glass-card">
+      <div class="inbox-sidebar">
+        <div style="padding: 10px 15px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); display: flex; flex-direction: column; gap: 10px;">
+          <div class="form-group" style="margin-bottom: 0;">
+            <select id="inbox-account-filter" style="width: 100%; background: rgba(0, 0, 0, 0.8); border: 1px solid var(--card-border); color: var(--text-color); padding: 8px; border-radius: 6px; font-size: 13px; outline: none; font-family: var(--font-family-sans);">
+              <option value="">Tất cả tài khoản Zalo</option>
+            </select>
+          </div>
+          <div class="inbox-search" style="margin-bottom: 0;">
+            <input type="text" id="inbox-search-input" placeholder="Tìm hội thoại...">
+          </div>
+          <button id="btn-sync-all-chats" class="btn btn-secondary-outline btn-sm" style="width: 100%;">Đồng bộ tất cả tin nhắn</button>
+        </div>
+        <div class="inbox-contact-list" id="inbox-contacts">
+          <!-- Loaded dynamically -->
+        </div>
+      </div>
+      <div class="inbox-chat-area" id="inbox-chat-area">
+        <div class="chat-placeholder">
+          <p>Chọn một cuộc hội thoại từ danh sách để xem tin nhắn</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  </div>
+
+  <!-- Zalo Connection QR Modal -->
+  <div id="zalo-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-content glass-card">
+      <div class="modal-header">
+        <h3>Quét Mã QR Zalo Web</h3>
+        <button id="btn-close-modal" class="btn btn-primary-outline btn-sm">Đóng</button>
+      </div>
+      <div class="modal-body" style="text-align: center; margin-top: 15px;">
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 15px;">
+          Hãy quét mã QR bên dưới bằng ứng dụng Zalo trên điện thoại để đăng nhập.
+        </p>
+        <div id="qr-container-box">
+          <img id="zalo-qr-img" src="zalo_screenshot.png" style="max-width: 100%; max-height: 450px; border: 1px solid var(--accent-gold); border-radius: 6px;" alt="QR Code loading...">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Zalo Accounts Manager Modal -->
+  <div id="zalo-accounts-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-content glass-card" style="width: 700px; max-width: 95%;">
+      <div class="modal-header">
+        <h3>Quản lý Tài Khoản Zalo</h3>
+        <button id="btn-close-accounts-modal" class="btn btn-primary-outline btn-sm">Đóng</button>
+      </div>
+      <div class="modal-body" style="margin-top: 15px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+          <p style="font-size: 13px; color: var(--text-muted);">
+            Thêm và kết nối nhiều tài khoản Zalo Web để chạy song song chiến dịch.
+          </p>
+          <button id="btn-create-account" class="btn btn-secondary btn-sm">+ Thêm Tài Khoản Mới</button>
+        </div>
+        <div id="accounts-list-container" style="display: flex; flex-direction: column; gap: 15px; max-height: 450px; overflow-y: auto; padding-right: 5px;">
+          <!-- Loaded dynamically from accounts.js -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Staff Accounts Manager Modal -->
+  <div id="staff-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-content glass-card" style="width: 550px; max-width: 95%;">
+      <div class="modal-header">
+        <h3>Quản lý Tài Khoản Nhân Viên (Staff)</h3>
+        <button id="btn-close-staff-modal" class="btn btn-primary-outline btn-sm">Đóng</button>
+      </div>
+      <div class="modal-body" style="margin-top: 15px;">
+        <form id="create-staff-form" style="margin-bottom: 25px; padding: 15px; border: 1px solid var(--card-border); border-radius: 8px; background: rgba(0, 0, 0, 0.4);">
+          <h4 id="staff-form-title" style="color: var(--accent-gold); margin-bottom: 12px; font-size: 13px; text-transform: uppercase; font-weight: 600;">Thêm tài khoản nhân viên mới</h4>
+          <div style="display: grid; grid-template-columns: 1.2fr 1.2fr 1fr auto; gap: 10px; align-items: end;">
+            <input type="hidden" id="staff-edit-id" value="">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label for="staff-username" style="font-size: 10px;">Tên đăng nhập</label>
+              <input type="text" id="staff-username" required placeholder="nhanvien1" style="padding: 6px 10px; font-size: 13px;">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label for="staff-password" style="font-size: 10px;">Mật khẩu</label>
+              <input type="password" id="staff-password" required placeholder="••••••••" style="padding: 6px 10px; font-size: 13px;">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label for="staff-role" style="font-size: 10px;">Vai trò</label>
+              <select id="staff-role" style="background: rgba(0,0,0,0.8); border: 1px solid var(--card-border); color: var(--text-color); padding: 7px 10px; border-radius: 6px; font-size: 13px; outline: none; width: 100%; height: 35px; box-sizing: border-box; font-family: var(--font-family-sans);">
+                <option value="staff">STAFF</option>
+                <option value="admin">ADMIN</option>
+              </select>
+            </div>
+            <div style="display: flex; gap: 5px;">
+              <button type="submit" id="btn-staff-submit" class="btn btn-secondary btn-sm" style="padding: 8px 15px; height: 35px;">Tạo mới</button>
+              <button type="button" id="btn-staff-cancel-edit" class="btn btn-primary-outline btn-sm" style="padding: 8px 15px; display: none; height: 35px;" onclick="cancelEditStaff()">Hủy</button>
+            </div>
+          </div>
+          <div id="staff-error-msg" style="color: var(--accent-red); font-size: 11px; margin-top: 8px; display: none;"></div>
+        </form>
+        
+        <h4 style="color: var(--accent-gold); margin-bottom: 10px; font-size: 13px; text-transform: uppercase; font-weight: 600;">Danh sách tài khoản</h4>
+        <div class="table-wrapper" style="max-height: 250px; overflow-y: auto;">
+          <table id="staff-table" style="font-size: 12px;">
+            <thead>
+               <tr>
+                 <th>Tên đăng nhập</th>
+                 <th>Vai trò</th>
+                 <th>Ngày tạo</th>
+                 <th style="text-align: right;">Thao tác</th>
+               </tr>
+            </thead>
+            <tbody id="staff-tbody">
+              <!-- Loaded dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container for UX Notifications -->
+  <div class="toast-container" id="toast-container"></div>
+  <script src="app.js" defer></script>
+  <script src="accounts.js" defer></script>
+  <script src="inbox.js" defer></script>
+</body>
+</html>
