@@ -2,7 +2,8 @@ import { EventEmitter } from 'events';
 
 class LogEmitter extends EventEmitter {
   log(message) {
-    const formatted = `${new Date().toLocaleTimeString()} - ${message}`;
+    const vnTimeStr = new Date().toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    const formatted = `${vnTimeStr} - ${message}`;
     console.log(formatted);
     this.emit('log', formatted);
   }

@@ -7,12 +7,15 @@ import { log } from './logger.js';
 let isWorkerRunning = false;
 
 function isWithinWorkingHours() {
-  const now = new Date();
-  const utcTime = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
-  const vnTime = new Date(utcTime + (7 * 60 * 60 * 1000));
+  const options = { timeZone: 'Asia/Ho_Chi_Minh', hour: 'numeric', minute: 'numeric', hour12: false };
+  const formatter = new Intl.DateTimeFormat('vi-VN', options);
+  const parts = formatter.formatToParts(new Date());
   
-  const hour = vnTime.getHours();
-  const minute = vnTime.getMinutes();
+  const hourPart = parts.find(p => p.type === 'hour');
+  const minutePart = parts.find(p => p.type === 'minute');
+  
+  const hour = parseInt(hourPart.value, 10);
+  const minute = parseInt(minutePart.value, 10);
   
   // Morning: 08:30 - 12:00 (11:59 is allowed, 12:00 is limit)
   const isMorning = (hour > 8 && hour < 12) || (hour === 8 && minute >= 30);
