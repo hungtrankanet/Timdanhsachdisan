@@ -288,7 +288,8 @@ export function evaluateRelevance(brandName, address, category, websiteUrl, webC
     'tranh nghệ thuật', 'phòng tranh', 'gallery', 'art gallery', 'mỹ thuật', 'fine art', 'tranh sơn dầu', 'tranh acrylic', 'họa sĩ', 'xưởng tranh', 'art studio',
     'gốm sứ mỹ nghệ', 'gốm nghệ thuật', 'ceramic art', 'pottery', 'gốm thủ công', 'làng gốm', 'xưởng gốm',
     'thổ cẩm', 'lụa thủ công', 'thêu tay', 'handmade', 'thủ công mỹ nghệ', 'handicraft', 'craft', 'artisan', 'nghệ nhân',
-    'khung tranh', 'xưởng khung tranh', 'đóng khung tranh'
+    'khung tranh', 'xưởng khung tranh', 'đóng khung tranh',
+    'mỹ nghệ', 'tranh thêu', 'thêu'
   ];
 
   const keywordsT2 = [
@@ -402,9 +403,9 @@ export function evaluateRelevance(brandName, address, category, websiteUrl, webC
   }
 
   let status = 'rejected';
-  if (score >= 7) {
+  if (score > 3) {
     status = 'unverified';
-  } else if (score >= 5) {
+  } else if (score > 0) {
     status = 'pending_review';
   }
 

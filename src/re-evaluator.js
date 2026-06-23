@@ -14,10 +14,15 @@ export async function startReEvaluatorWorker() {
        SET verification_status = 'pending_review', 
            verification_notes = NULL 
        WHERE (verification_status = 'rejected' OR verification_status = 'pending_review')
-         AND (brand_name LIKE '%khung tranh%' OR brand_name LIKE '%Khung Tranh%')`
+         AND (
+           brand_name LIKE '%khung tranh%' OR brand_name LIKE '%Khung Tranh%' OR
+           brand_name LIKE '%mỹ nghệ%' OR brand_name LIKE '%Mỹ nghệ%' OR
+           brand_name LIKE '%thêu%' OR brand_name LIKE '%Thêu%' OR
+           brand_name LIKE '%mỹ thuật%' OR brand_name LIKE '%Mỹ thuật%'
+         )`
     );
     if (resetResult && resetResult.changes > 0) {
-      log(`[Re-Evaluator] Đã tự động phục hồi ${resetResult.changes} địa điểm khung tranh bị bỏ lỡ trước đó để chấm điểm lại.`);
+      log(`[Re-Evaluator] Đã tự động phục hồi ${resetResult.changes} địa điểm cũ (khung tranh, mỹ nghệ, thêu, mỹ thuật) bị bỏ lỡ trước đó để chấm điểm lại.`);
     }
   } catch (err) {
     log(`[Re-Evaluator Error] Lỗi khi phục hồi các địa điểm khung tranh cũ: ${err.message}`);
@@ -95,7 +100,7 @@ async function runReEvaluationCycle() {
           finalStatus = lead.verification_status;
           log(`[Re-Evaluator] Bảo lưu trạng thái gốc "${lead.verification_status}" cho ID ${lead.id}. (Điểm chấm lại: ${relResult.score})`);
         } else if (lead.verification_status === 'invalid') {
-          if (relResult.score >= 7 && lead.phone && lead.phone.trim() !== '') {
+          if (relResult.score > 3 && lead.phone && lead.phone.trim() !== '') {
             finalStatus = 'partially_verified';
             log(`[Re-Evaluator] Nâng cấp trạng thái ID ${lead.id}: "invalid" -> "partially_verified" vì là địa điểm tiềm năng cao (Điểm: ${relResult.score})`);
           } else {

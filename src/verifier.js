@@ -140,14 +140,14 @@ export async function verifyLead(leadId, logCallback = log) {
       status = 'partially_verified';
     }
   } else {
-    // If both web and FB are invalid/down, but the lead is highly relevant (score >= 7) and has a phone, mark as partially_verified
+    // If both web and FB are invalid/down, but the lead is highly relevant (score > 3) and has a phone, mark as partially_verified
     const noteContent = lead.verification_notes || '';
     const scoreMatch = noteContent.match(/\[Điểm:\s*(\d+)\]/);
     const score = scoreMatch ? parseInt(scoreMatch[1], 10) : 0;
     
-    if (score >= 7 && verifiedPhone && verifiedPhone.trim() !== '') {
+    if (score > 3 && verifiedPhone && verifiedPhone.trim() !== '') {
       status = 'partially_verified';
-      notes.push('Không có website/FB hoạt động nhưng là địa điểm tiềm năng cao (Điểm >= 7) và có SĐT.');
+      notes.push('Không có website/FB hoạt động nhưng là địa điểm tiềm năng cao (Điểm > 3) và có SĐT.');
     }
   }
 
