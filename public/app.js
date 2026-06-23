@@ -913,6 +913,23 @@ async function updateSystemStatus() {
       statusZaloBadge.textContent = 'Chưa kết nối';
       statusZaloBadge.style.color = 'var(--accent-red)';
     }
+
+    // Cập nhật trạng thái chiến dịch Zalo
+    const zaloCampaignBadge = document.getElementById('zalo-campaign-status-badge');
+    const zaloCampaignBtn = document.getElementById('btn-toggle-zalo-campaign');
+    if (zaloCampaignBadge && zaloCampaignBtn) {
+      if (data.zalo_campaign_status === 'active') {
+        zaloCampaignBadge.textContent = 'Đang gửi tin';
+        zaloCampaignBadge.style.color = '#2e7d32';
+        zaloCampaignBtn.textContent = 'Dừng gửi Zalo';
+        zaloCampaignBtn.className = 'btn btn-primary';
+      } else {
+        zaloCampaignBadge.textContent = 'Đang dừng gửi';
+        zaloCampaignBadge.style.color = 'var(--accent-red)';
+        zaloCampaignBtn.textContent = 'Gửi tin nhắn kết bạn Zalo';
+        zaloCampaignBtn.className = 'btn btn-secondary';
+      }
+    }
   } catch (err) {
     console.error(err);
   }
@@ -935,6 +952,29 @@ async function toggleAutomation() {
       showToast(currentStatus === 'active' ? 'Đã bật Tự động hóa!' : 'Đã tạm dừng Tự động hóa!', 'success');
       updateSystemStatus();
       loadQueue();
+    }
+  } catch (err) {
+    showToast(`Lỗi: ${err.message}`, 'error');
+  }
+}
+
+// 8e-2. Action: Toggle Zalo Campaign
+async function toggleZaloCampaign() {
+  const toggleBtn = document.getElementById('btn-toggle-zalo-campaign');
+  if (!toggleBtn) return;
+  const currentStatus = toggleBtn.textContent.includes('Dừng gửi') ? 'idle' : 'active';
+  
+  showToast(currentStatus === 'active' ? 'Đang kích hoạt chiến dịch gửi Zalo...' : 'Đang tạm dừng chiến dịch gửi Zalo...', 'info');
+  
+  try {
+    const res = await fetch('/api/zalo/campaign/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: currentStatus })
+    });
+    if (res.ok) {
+      showToast(currentStatus === 'active' ? 'Đã kích hoạt chiến dịch Zalo!' : 'Đã dừng chiến dịch Zalo!', 'success');
+      updateSystemStatus();
     }
   } catch (err) {
     showToast(`Lỗi: ${err.message}`, 'error');
@@ -977,6 +1017,9 @@ function setupEventListeners() {
   document.getElementById('btn-start-scrape').addEventListener('click', startScrape);
   document.getElementById('btn-force-scheduler').addEventListener('click', forceScheduler);
   document.getElementById('btn-toggle-automation').addEventListener('click', toggleAutomation);
+  if (document.getElementById('btn-toggle-zalo-campaign')) {
+    document.getElementById('btn-toggle-zalo-campaign').addEventListener('click', toggleZaloCampaign);
+  }
   document.getElementById('btn-add-queue').addEventListener('click', addToQueue);
   document.getElementById('btn-save-sheet').addEventListener('click', saveConfig);
   document.getElementById('btn-save-chatbot').addEventListener('click', saveChatbotConfig);

@@ -129,6 +129,7 @@ function initDb() {
     db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('smtp_from', '')");
     db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('report_receiver', '')");
     db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('email_reporting_enabled', 'false')");
+    db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('zalo_campaign_status', 'idle')");
     db.run("SELECT 1", () => {
       resolveDbReady();
     });

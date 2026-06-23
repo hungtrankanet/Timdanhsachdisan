@@ -92,104 +92,138 @@ export async function runQueueWorker() {
 
     // 4. Zalo Messaging Campaign (Throttle limits: max 30 per worker cycle, safe delays)
     await run('INSERT OR REPLACE INTO configs (key, value) VALUES (?, ?)', ['current_task', 'Đang gửi lời mời chiến dịch Zalo...']);
-    // Fetch all active connected Zalo accounts
-    const connectedAccounts = await all("SELECT id, assigned_regions FROM zalo_accounts WHERE status = 'connected'");
     
-    if (connectedAccounts.length > 0) {
-      log(`Tìm thấy ${connectedAccounts.length} tài khoản Zalo đang kết nối để gửi tin nhắn chiến dịch.`);
-      
-      for (const acc of connectedAccounts) {
-        const accountId = acc.id;
-        const loggedIn = await isZaloLoggedIn(accountId);
-        if (!loggedIn) {
-          log(`Tài khoản Zalo ID ${accountId} chưa thực sự đăng nhập (Hoặc mất phiên). Bỏ qua.`);
-          continue;
-        }
-
-        // 1. Kiểm tra ngày bắt đầu chiến dịch để tính giới hạn hàng ngày
-        let startDateRow = await get('SELECT value FROM configs WHERE key = "campaign_start_date"');
-        let startDateStr = startDateRow ? startDateRow.value : null;
-        if (!startDateStr) {
-          startDateStr = new Date().toISOString();
-          await run('INSERT OR REPLACE INTO configs (key, value) VALUES ("campaign_start_date", ?)', [startDateStr]);
-        }
-        
-        const startDate = new Date(startDateStr);
-        const daysDiff = Math.floor((new Date() - startDate) / (1000 * 60 * 60 * 24));
-        
-        // Giới hạn theo ngày (50 người trong 7 ngày đầu, 70 người sau 7 ngày, 100 người sau 15 ngày)
-        let dailyLimit = 50;
-        if (daysDiff >= 7 && daysDiff < 15) {
-          dailyLimit = 70;
-        } else if (daysDiff >= 15) {
-          dailyLimit = 100;
-        }
-        
-        // Đếm số người đã gửi hôm nay bằng tài khoản này (bao gồm cả bot gửi từ webhook)
-        const now = new Date();
-        const utcTime = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
-        const vnTime = new Date(utcTime + (7 * 60 * 60 * 1000));
-        vnTime.setHours(0, 0, 0, 0);
-        const vnStartOfDayInUTC = new Date(vnTime.getTime() - (7 * 60 * 60 * 1000));
-        const startOfDayIso = vnStartOfDayInUTC.toISOString();
-
-        const sentTodayRow = await get(`
-          SELECT COUNT(DISTINCT lead_id) as count 
-          FROM zalo_chat_logs 
-          WHERE (sender = 'me' OR sender = 'bot') 
-            AND timestamp >= ?
-            AND zalo_account_id = ?
-        `, [startOfDayIso, accountId]);
-        const sentToday = sentTodayRow ? sentTodayRow.count : 0;
-        
-        log(`[Zalo ID ${accountId}] Ngày thứ ${daysDiff + 1}. Giới hạn: ${dailyLimit}. Đã gửi hôm nay: ${sentToday}.`);
-        
-        if (sentToday >= dailyLimit) {
-          log(`[Zalo ID ${accountId}] Đã đạt giới hạn gửi trong ngày (${sentToday}/${dailyLimit}). Tạm dừng gửi thêm.`);
-          continue;
-        }
-
-        const remaining = dailyLimit - sentToday;
-        // Lấy lead được gán cho tài khoản này hoặc chưa gán cho ai (NULL)
-        let query = `
-          SELECT l.id FROM leads l
-          WHERE (l.verification_status = 'verified' OR l.verification_status = 'partially_verified') 
-            AND l.zalo_status = 'pending' 
-            AND (l.assigned_zalo_account_id = ? OR l.assigned_zalo_account_id IS NULL)
-        `;
-        const params = [accountId];
-
-        if (acc.assigned_regions) {
-          const regions = acc.assigned_regions.split(',')
-            .map(r => r.trim())
-            .filter(Boolean);
-          
-          if (regions.length > 0) {
-            const regionConditions = regions.map(() => `l.city LIKE ?`).join(' OR ');
-            query += ` AND (${regionConditions})`;
-            regions.forEach(r => params.push(`%${r}%`));
-          }
-        }
-
-        query += ` LIMIT ?`;
-        params.push(remaining);
-
-        const pendingZaloLeads = await all(query, params);
-        
-        log(`[Zalo ID ${accountId}] Tìm thấy ${pendingZaloLeads.length} danh bạ chờ gửi Zalo.`);
-        for (const lead of pendingZaloLeads) {
-          try {
-            await sendZaloInvite(accountId, lead.id);
-            // Nghỉ giải lao 5 phút (300.000 ms) giữa mỗi lần gửi để chống chặn
-            log('Nghỉ giải lao 5 phút (300 giây) trước khi gửi tiếp theo...');
-            await new Promise(r => setTimeout(r, 5 * 60 * 1000));
-          } catch (err) {
-            log(`Lỗi gửi Zalo lead ID ${lead.id}: ${err.message}`);
-          }
-        }
-      }
+    const campaignStatusRow = await get('SELECT value FROM configs WHERE key = "zalo_campaign_status"');
+    const campaignStatus = campaignStatusRow ? campaignStatusRow.value : 'idle';
+    
+    if (campaignStatus !== 'active') {
+      log('Chiến dịch gửi tin nhắn kết bạn Zalo đang tạm dừng. Bỏ qua gửi tin nhắn chiến dịch.');
     } else {
-      log('Không có tài khoản Zalo nào đang kết nối hoạt động. Bỏ qua gửi tin nhắn tự động.');
+      // Fetch all active connected Zalo accounts
+      const connectedAccounts = await all("SELECT id, assigned_regions FROM zalo_accounts WHERE status = 'connected'");
+      
+      if (connectedAccounts.length > 0) {
+        log(`Tìm thấy ${connectedAccounts.length} tài khoản Zalo đang kết nối để gửi tin nhắn chiến dịch.`);
+        
+        for (const acc of connectedAccounts) {
+          // Kiểm tra xem chiến dịch có bị tạm dừng đột ngột không trước khi xử lý tài khoản tiếp theo
+          const checkStatus = await get('SELECT value FROM configs WHERE key = "zalo_campaign_status"');
+          if (!checkStatus || checkStatus.value !== 'active') {
+            log('Chiến dịch gửi Zalo bị tạm dừng. Dừng tiến trình gửi tin.');
+            break;
+          }
+
+          const accountId = acc.id;
+          const loggedIn = await isZaloLoggedIn(accountId);
+          if (!loggedIn) {
+            log(`Tài khoản Zalo ID ${accountId} chưa thực sự đăng nhập (Hoặc mất phiên). Bỏ qua.`);
+            continue;
+          }
+
+          // 1. Kiểm tra ngày bắt đầu chiến dịch để tính giới hạn hàng ngày
+          let startDateRow = await get('SELECT value FROM configs WHERE key = "campaign_start_date"');
+          let startDateStr = startDateRow ? startDateRow.value : null;
+          if (!startDateStr) {
+            startDateStr = new Date().toISOString();
+            await run('INSERT OR REPLACE INTO configs (key, value) VALUES ("campaign_start_date", ?)', [startDateStr]);
+          }
+          
+          const startDate = new Date(startDateStr);
+          const daysDiff = Math.floor((new Date() - startDate) / (1000 * 60 * 60 * 24));
+          
+          // Giới hạn theo ngày (50 người trong 7 ngày đầu, 70 người sau 7 ngày, 100 người sau 15 ngày)
+          let dailyLimit = 50;
+          if (daysDiff >= 7 && daysDiff < 15) {
+            dailyLimit = 70;
+          } else if (daysDiff >= 15) {
+            dailyLimit = 100;
+          }
+          
+          // Đếm số người đã gửi hôm nay bằng tài khoản này (bao gồm cả bot gửi từ webhook)
+          const now = new Date();
+          const utcTime = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
+          const vnTime = new Date(utcTime + (7 * 60 * 60 * 1000));
+          vnTime.setHours(0, 0, 0, 0);
+          const vnStartOfDayInUTC = new Date(vnTime.getTime() - (7 * 60 * 60 * 1000));
+          const startOfDayIso = vnStartOfDayInUTC.toISOString();
+
+          const sentTodayRow = await get(`
+            SELECT COUNT(DISTINCT lead_id) as count 
+            FROM zalo_chat_logs 
+            WHERE (sender = 'me' OR sender = 'bot') 
+              AND timestamp >= ?
+              AND zalo_account_id = ?
+          `, [startOfDayIso, accountId]);
+          const sentToday = sentTodayRow ? sentTodayRow.count : 0;
+          
+          log(`[Zalo ID ${accountId}] Ngày thứ ${daysDiff + 1}. Giới hạn: ${dailyLimit}. Đã gửi hôm nay: ${sentToday}.`);
+          
+          if (sentToday >= dailyLimit) {
+            log(`[Zalo ID ${accountId}] Đã đạt giới hạn gửi trong ngày (${sentToday}/${dailyLimit}). Tạm dừng gửi thêm.`);
+            continue;
+          }
+
+          const remaining = dailyLimit - sentToday;
+          // Lấy lead được gán cho tài khoản này hoặc chưa gán cho ai (NULL)
+          let query = `
+            SELECT l.id FROM leads l
+            WHERE (l.verification_status = 'verified' OR l.verification_status = 'partially_verified') 
+              AND l.zalo_status = 'pending' 
+              AND (l.assigned_zalo_account_id = ? OR l.assigned_zalo_account_id IS NULL)
+          `;
+          const params = [accountId];
+
+          if (acc.assigned_regions) {
+            const regions = acc.assigned_regions.split(',')
+              .map(r => r.trim())
+              .filter(Boolean);
+            
+            if (regions.length > 0) {
+              const regionConditions = regions.map(() => `l.city LIKE ?`).join(' OR ');
+              query += ` AND (${regionConditions})`;
+              regions.forEach(r => params.push(`%${r}%`));
+            }
+          }
+
+          query += ` LIMIT ?`;
+          params.push(remaining);
+
+          const pendingZaloLeads = await all(query, params);
+          
+          log(`[Zalo ID ${accountId}] Tìm thấy ${pendingZaloLeads.length} danh bạ chờ gửi Zalo.`);
+          for (const lead of pendingZaloLeads) {
+            // Kiểm tra xem chiến dịch có bị tạm dừng đột ngột không trước khi xử lý lead tiếp theo
+            const currentCampaignStatus = await get('SELECT value FROM configs WHERE key = "zalo_campaign_status"');
+            if (!currentCampaignStatus || currentCampaignStatus.value !== 'active') {
+              log('Chiến dịch gửi Zalo bị tạm dừng. Dừng vòng lặp gửi tin.');
+              break;
+            }
+
+            try {
+              await sendZaloInvite(accountId, lead.id);
+              
+              // Nghỉ giải lao 5 phút (300 giây) nhưng kiểm tra mỗi giây để có thể ngắt ngay lập tức
+              log('Nghỉ giải lao 5 phút (300 giây) trước khi gửi tiếp theo...');
+              let interrupted = false;
+              for (let i = 0; i < 300; i++) {
+                await new Promise(r => setTimeout(r, 1000));
+                
+                const innerStatus = await get('SELECT value FROM configs WHERE key = "zalo_campaign_status"');
+                if (!innerStatus || innerStatus.value !== 'active') {
+                  log('Chiến dịch gửi Zalo đã bị tạm dừng trong thời gian nghỉ. Ngắt nghỉ giải lao.');
+                  interrupted = true;
+                  break;
+                }
+              }
+              if (interrupted) break;
+            } catch (err) {
+              log(`Lỗi gửi Zalo lead ID ${lead.id}: ${err.message}`);
+            }
+          }
+        }
+      } else {
+        log('Không có tài khoản Zalo nào đang kết nối hoạt động. Bỏ qua gửi tin nhắn tự động.');
+      }
     }
 
     log(`--- HOÀN TẤT TÁC VỤ HÀNG ĐỢI ID ${job.id} ---`);

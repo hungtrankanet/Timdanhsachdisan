@@ -257,17 +257,46 @@ export async function sendZaloInvite(accountId, leadId, logCallback = log) {
     
     await new Promise(r => setTimeout(r, 1000));
     await zaloPage.keyboard.press('Enter');
-    logCallback(`[Zalo ID ${accountId}] Đã gửi tin nhắn mời tham gia bình chọn.`);
-    notes.push('Đã gửi tin mời.');
-
-    await run("UPDATE leads SET zalo_status = 'message_sent', zalo_notes = ?, assigned_zalo_account_id = ? WHERE id = ?", [notes.join(' | '), accountId, leadId]);
+    logCallback(`[Zalo ID ${accountId}] Đã nhấn Enter để gửi tin nhắn.`);
     
-    // Lưu tin nhắn chiến dịch vừa gửi vào chat log của lead
-    const nowIso = new Date().toISOString();
-    await run(
-      "INSERT OR IGNORE INTO zalo_chat_logs (lead_id, sender, message, timestamp, zalo_account_id) VALUES (?, 'me', ?, ?, ?)",
-      [leadId, messageText, nowIso, accountId]
-    );
+    // Wait to verify if message was successfully sent or blocked
+    await new Promise(r => setTimeout(r, 2000));
+    
+    const blockReason = await zaloPage.evaluate(() => {
+      const text = document.body.innerText;
+      if (text.includes('không thể nhắn tin') || text.includes('chưa thể gửi tin nhắn') || text.includes('bị chặn')) {
+        return 'blocked';
+      }
+      if (text.includes('chỉ nhận tin nhắn từ bạn bè')) {
+        return 'only_friends';
+      }
+      return null;
+    });
+
+    let finalStatus = 'message_sent';
+    if (blockReason === 'blocked') {
+      logCallback(`[Zalo ID ${accountId}] Phát hiện bị chặn nhắn tin cho SĐT: ${phone}`);
+      notes.push('Bị chặn nhắn tin.');
+      finalStatus = 'blocked';
+    } else if (blockReason === 'only_friends') {
+      logCallback(`[Zalo ID ${accountId}] Phát hiện chỉ nhận tin nhắn từ bạn bè cho SĐT: ${phone}`);
+      notes.push('Chỉ nhận bạn bè (Đã gửi kết bạn).');
+      finalStatus = 'friend_request_sent';
+    } else {
+      logCallback(`[Zalo ID ${accountId}] Đã gửi tin nhắn mời thành công.`);
+      notes.push('Đã gửi tin mời.');
+    }
+
+    await run("UPDATE leads SET zalo_status = ?, zalo_notes = ?, assigned_zalo_account_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", [finalStatus, notes.join(' | '), accountId, leadId]);
+    
+    // Lưu tin nhắn chiến dịch vừa gửi vào chat log của lead nếu không bị chặn hoàn toàn
+    if (finalStatus !== 'blocked') {
+      const nowIso = new Date().toISOString();
+      await run(
+        "INSERT OR IGNORE INTO zalo_chat_logs (lead_id, sender, message, timestamp, zalo_account_id) VALUES (?, 'me', ?, ?, ?)",
+        [leadId, messageText, nowIso, accountId]
+      );
+    }
     
   } catch (err) {
     logCallback(`Lỗi gửi Zalo từ tài khoản ${accountId} đến ${phone}: ${err.message}`);
@@ -323,7 +352,7 @@ export async function syncZaloChat(accountId, leadId, logCallback = log) {
 
     // Wait for the message items to appear or timeout
     try {
-      await zaloPage.waitForSelector('.msg-item, [class*="msg-item"]', { timeout: 5000 });
+      await zaloPage.waitForSelector('.chat-item, [class*="chat-item"]', { timeout: 5000 });
     } catch (e) {
       logCallback(`[Zalo ID ${accountId}] Chưa có tin nhắn nào trong hội thoại này.`);
     }
@@ -337,12 +366,17 @@ export async function syncZaloChat(accountId, leadId, logCallback = log) {
       const rectContainer = chatContainer.getBoundingClientRect();
       const centerContainer = rectContainer.left + rectContainer.width / 2;
 
-      const items = Array.from(document.querySelectorAll('.msg-item, [class*="msg-item"]'));
+      const items = Array.from(chatContainer.querySelectorAll('.chat-item, [class*="chat-item"]'));
       
       return items.map(item => {
         const rectItem = item.getBoundingClientRect();
         const itemCenter = rectItem.left + rectItem.width / 2;
-        const sender = itemCenter > centerContainer ? 'me' : 'client';
+        
+        // Phân loại sender: ưu tiên kiểm tra class .chatted-me của Zalo Web, fallback bằng tọa độ center
+        const hasChattedMe = item.classList.contains('chatted-me') || 
+                             item.querySelector('.chatted-me') || 
+                             item.querySelector('[class*="chatted-me"]');
+        const sender = hasChattedMe ? 'me' : (itemCenter > centerContainer ? 'me' : 'client');
         
         const textContainer = item.querySelector('.card') || 
                               item.querySelector('.text') || 

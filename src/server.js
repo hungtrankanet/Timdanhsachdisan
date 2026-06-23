@@ -247,10 +247,27 @@ app.post('/api/scheduler/toggle', async (req, res) => {
   }
 });
 
+// 9c-2. API: Toggle Zalo campaign status
+app.post('/api/zalo/campaign/toggle', async (req, res) => {
+  const { status } = req.body; // 'active' or 'idle'
+  if (!status) return res.status(400).json({ error: 'Missing status' });
+  try {
+    await run('INSERT OR REPLACE INTO configs (key, value) VALUES (?, ?)', ['zalo_campaign_status', status]);
+    log(`Đã thay đổi trạng thái Chiến dịch Zalo sang: "${status}"`);
+    if (status === 'active') {
+      runQueueWorker(); // Trigger worker to start sending immediately
+    }
+    res.json({ success: true, status });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 9d. API: Get system state status
 app.get('/api/status', async (req, res) => {
   try {
     const statusRow = await get('SELECT value FROM configs WHERE key = "scheduler_status"');
+    const campaignStatusRow = await get('SELECT value FROM configs WHERE key = "zalo_campaign_status"');
     const taskRow = await get('SELECT value FROM configs WHERE key = "current_task"');
     const sheetsRow = await get('SELECT value FROM configs WHERE key = "sheets_web_app_url"');
     
@@ -259,6 +276,7 @@ app.get('/api/status', async (req, res) => {
     
     res.json({
       scheduler_status: statusRow ? statusRow.value : 'idle',
+      zalo_campaign_status: campaignStatusRow ? campaignStatusRow.value : 'idle',
       current_task: taskRow ? taskRow.value : 'Tạm dừng (Idle)',
       zalo_logged_in: loggedIn,
       sheets_configured: !!(sheetsRow && sheetsRow.value)

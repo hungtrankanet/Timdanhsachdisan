@@ -5,11 +5,15 @@ import { log } from './logger.js';
 // Get daily statistics from database
 async function getDailyStats() {
   const now = new Date();
-  const utcTime = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
-  const vnTime = new Date(utcTime + (7 * 60 * 60 * 1000));
-  vnTime.setHours(0, 0, 0, 0);
-  const vnStartOfDayInUTC = new Date(vnTime.getTime() - (7 * 60 * 60 * 1000));
-  const startOfDayIso = vnStartOfDayInUTC.toISOString();
+  const utcMs = now.getTime();
+  const vnMs = utcMs + (7 * 60 * 60 * 1000);
+  const vnDate = new Date(vnMs);
+  const vnYear = vnDate.getUTCFullYear();
+  const vnMonth = vnDate.getUTCMonth();
+  const vnDay = vnDate.getUTCDate();
+  const vnStartOfDayMs = Date.UTC(vnYear, vnMonth, vnDay, 0, 0, 0, 0);
+  const startOfDayIso = new Date(vnStartOfDayMs - (7 * 60 * 60 * 1000)).toISOString();
+  const reportDateStr = `${String(vnDay).padStart(2, '0')}/${String(vnMonth + 1).padStart(2, '0')}/${vnYear}`;
 
   // 1. Leads verified today
   const verifiedRow = await get(
@@ -18,24 +22,45 @@ async function getDailyStats() {
   );
   const verifiedCount = verifiedRow ? verifiedRow.count : 0;
 
-  // 2. Zalo messages sent today
+  // 2. Zalo messages sent today (logs)
   const sentMsgsRow = await get(
     "SELECT COUNT(*) as count FROM zalo_chat_logs WHERE (sender = 'me' OR sender = 'bot') AND timestamp >= ?",
     [startOfDayIso]
   );
   const sentMsgsCount = sentMsgsRow ? sentMsgsRow.count : 0;
 
-  // 3. Friend requests sent today (zalo_status updated today)
+  // 3. Friend requests sent today (has "Đã gửi kết bạn." in notes)
   const friendRequestsRow = await get(
-    "SELECT COUNT(*) as count FROM leads WHERE zalo_status = 'friend_request_sent' AND updated_at >= ?",
+    "SELECT COUNT(*) as count FROM leads WHERE zalo_notes LIKE '%Đã gửi kết bạn.%' AND updated_at >= ?",
     [startOfDayIso]
   );
   const friendRequestsCount = friendRequestsRow ? friendRequestsRow.count : 0;
 
-  // 4. Active Zalo Accounts status
+  // 4. Messages successfully sent today (leads with status 'message_sent' updated today)
+  const sentSuccessRow = await get(
+    "SELECT COUNT(*) as count FROM leads WHERE zalo_status = 'message_sent' AND updated_at >= ?",
+    [startOfDayIso]
+  );
+  const sentSuccessCount = sentSuccessRow ? sentSuccessRow.count : 0;
+
+  // 5. Blocked contacts today (leads with status 'blocked' updated today)
+  const blockedRow = await get(
+    "SELECT COUNT(*) as count FROM leads WHERE zalo_status = 'blocked' AND updated_at >= ?",
+    [startOfDayIso]
+  );
+  const blockedCount = blockedRow ? blockedRow.count : 0;
+
+  // 6. Only receive messages from friends (leads with status 'friend_request_sent' updated today)
+  const friendRequestOnlyRow = await get(
+    "SELECT COUNT(*) as count FROM leads WHERE zalo_status = 'friend_request_sent' AND updated_at >= ?",
+    [startOfDayIso]
+  );
+  const friendRequestOnlyCount = friendRequestOnlyRow ? friendRequestOnlyRow.count : 0;
+
+  // 7. Active Zalo Accounts status
   const accounts = await all("SELECT id, display_name, phone, status, custom_name, assigned_regions FROM zalo_accounts");
 
-  // 5. Crawler Queue Status
+  // 8. Crawler Queue Status
   const pendingJobsRow = await get("SELECT COUNT(*) as count FROM scheduler_queue WHERE status = 'pending'");
   const pendingJobsCount = pendingJobsRow ? pendingJobsRow.count : 0;
 
@@ -49,10 +74,13 @@ async function getDailyStats() {
     verifiedCount,
     sentMsgsCount,
     friendRequestsCount,
+    sentSuccessCount,
+    blockedCount,
+    friendRequestOnlyCount,
     accounts,
     pendingJobsCount,
     completedJobsCount,
-    reportDate: vnTime.toLocaleDateString('vi-VN')
+    reportDate: reportDateStr
   };
 }
 
@@ -135,12 +163,24 @@ export async function sendDailyReport() {
             <td style="padding: 10px; text-align: right; border-bottom: 1px solid #ddd; font-weight: bold; color: #2e7d32;">${stats.verifiedCount}</td>
           </tr>
           <tr>
-            <td style="padding: 10px; border-bottom: 1px solid #ddd;">Lời mời kết bạn Zalo đã gửi</td>
-            <td style="padding: 10px; text-align: right; border-bottom: 1px solid #ddd; font-weight: bold; color: #f57c00;">${stats.friendRequestsCount}</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">Kết bạn Zalo thành công (Đã gửi lời mời)</td>
+            <td style="padding: 10px; text-align: right; border-bottom: 1px solid #ddd; font-weight: bold; color: #2e7d32;">${stats.friendRequestsCount}</td>
           </tr>
           <tr>
-            <td style="padding: 10px; border-bottom: 1px solid #ddd;">Tin nhắn Zalo đã trao đổi (Bot + Staff)</td>
-            <td style="padding: 10px; text-align: right; border-bottom: 1px solid #ddd; font-weight: bold; color: #1565c0;">${stats.sentMsgsCount}</td>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">Gửi tin nhắn Zalo thành công</td>
+            <td style="padding: 10px; text-align: right; border-bottom: 1px solid #ddd; font-weight: bold; color: #1565c0;">${stats.sentSuccessCount}</td>
+          </tr>
+          <tr>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">Liên hệ Zalo bị chặn (Zalo Blocked)</td>
+            <td style="padding: 10px; text-align: right; border-bottom: 1px solid #ddd; font-weight: bold; color: #c62828;">${stats.blockedCount}</td>
+          </tr>
+          <tr>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">Liên hệ chỉ nhận tin từ bạn bè (Chờ đồng ý kết bạn)</td>
+            <td style="padding: 10px; text-align: right; border-bottom: 1px solid #ddd; font-weight: bold; color: #f57c00;">${stats.friendRequestOnlyCount}</td>
+          </tr>
+          <tr>
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">Tổng tin nhắn Zalo đã trao đổi (Bot + Staff)</td>
+            <td style="padding: 10px; text-align: right; border-bottom: 1px solid #ddd; font-weight: bold; color: #757575;">${stats.sentMsgsCount}</td>
           </tr>
           <tr>
             <td style="padding: 10px; border-bottom: 1px solid #ddd;">Tác vụ cào Google Maps đã hoàn thành</td>
