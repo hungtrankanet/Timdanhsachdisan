@@ -82,3 +82,8 @@ docker-compose up -d --build
   ```bash
   docker logs -f lacquer_heritage_scraper
   ```
+
+---
+
+## 🤖 Tự động hóa Deployment (CI/CD)
+Dự án đã được tích hợp GitHub Actions. Mỗi lần bạn `push` code lên nhánh `master` hoặc `main`, hệ thống sẽ tự động kéo code mới về VPS aaPanel và tái xây dựng (rebuild) lại Docker container tự động.
