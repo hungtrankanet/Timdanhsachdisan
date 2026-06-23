@@ -1,0 +1,16 @@
+# Ignore node modules and local binaries
+node_modules/
+node/
+
+# Ignore databases and persistent data directories
+*.db
+data/
+zalo_user_data/
+
+# Ignore version control and CI/CD files
+.git/
+.github/
+
+# Ignore logs
+*.log
+logs/
