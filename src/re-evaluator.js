@@ -95,7 +95,7 @@ async function runReEvaluationCycle() {
           finalStatus = lead.verification_status;
           log(`[Re-Evaluator] Bảo lưu trạng thái gốc "${lead.verification_status}" cho ID ${lead.id}. (Điểm chấm lại: ${relResult.score})`);
         } else if (lead.verification_status === 'invalid') {
-          if (relResult.score >= 4 && lead.phone && lead.phone.trim() !== '') {
+          if (relResult.score >= 7 && lead.phone && lead.phone.trim() !== '') {
             finalStatus = 'partially_verified';
             log(`[Re-Evaluator] Nâng cấp trạng thái ID ${lead.id}: "invalid" -> "partially_verified" vì là địa điểm tiềm năng cao (Điểm: ${relResult.score})`);
           } else {

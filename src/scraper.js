@@ -402,9 +402,9 @@ export function evaluateRelevance(brandName, address, category, websiteUrl, webC
   }
 
   let status = 'rejected';
-  if (score >= 4) {
+  if (score >= 7) {
     status = 'unverified';
-  } else if (score >= 2) {
+  } else if (score >= 5) {
     status = 'pending_review';
   }
 
