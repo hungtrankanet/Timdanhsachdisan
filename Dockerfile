@@ -9,6 +9,10 @@ RUN apt-get update && apt-get install -y \
     libxss1 \
     libasound2 \
     libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libxkbcommon0 \
+    libnss3 \
+    fonts-liberation \
     libc6 \
     libcairo2 \
     libcups2 \
