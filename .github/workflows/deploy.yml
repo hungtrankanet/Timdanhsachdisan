@@ -15,7 +15,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Trích xuất code và đẩy lên server aaPanel
-        uses: appleboy/scp-action@v0.1.4
+        uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
