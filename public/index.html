@@ -196,6 +196,37 @@
           <button id="btn-save-chatbot" class="btn btn-secondary-outline">Lưu Cấu Hình Chatbot</button>
         </div>
 
+        <!-- 2c. EMAIL REPORT SETTINGS -->
+        <div class="glass-card panel-card admin-only-field" style="display: none;">
+          <h3>Cấu hình Báo cáo Email</h3>
+          <div class="form-group">
+            <label for="smtp-host">SMTP Host</label>
+            <input type="text" id="smtp-host" placeholder="smtp.gmail.com" value="smtp.gmail.com">
+          </div>
+          <div class="form-group">
+            <label for="smtp-port">SMTP Port</label>
+            <input type="number" id="smtp-port" placeholder="587" value="587">
+          </div>
+          <div class="form-group">
+            <label for="smtp-user">SMTP Email (User)</label>
+            <input type="email" id="smtp-user" placeholder="vi-du@gmail.com">
+          </div>
+          <div class="form-group">
+            <label for="smtp-pass">SMTP App Password</label>
+            <input type="password" id="smtp-pass" placeholder="••••••••••••••••">
+          </div>
+          <div class="form-group">
+            <label for="report-receiver">Email nhận báo cáo</label>
+            <input type="email" id="report-receiver" placeholder="quan-tri@gmail.com">
+          </div>
+          <div class="form-group" style="display: flex; align-items: center; gap: 10px; margin-top: 15px;">
+            <input type="checkbox" id="email-reporting-enabled" style="width: auto;">
+            <label for="email-reporting-enabled" style="margin-bottom: 0; cursor: pointer;">Kích hoạt báo cáo hàng ngày (17h)</label>
+          </div>
+          <button id="btn-save-email" class="btn btn-secondary-outline" style="width: 100%; margin-top: 15px;">Lưu Cấu Hình Email</button>
+        </div>
+
+
         <!-- 3. LIVE CONSOLE LOGS -->
         <div class="glass-card panel-card log-panel">
           <h3>Nhật ký hệ thống (Live)</h3>

@@ -261,4 +261,14 @@ export function startScheduler() {
       log(`Lỗi trong tiến trình đồng bộ tin nhắn định kỳ: ${err.message}`);
     }
   }, 1000 * 60 * 30);
+
+  // Check and trigger email reports every minute
+  setInterval(async () => {
+    try {
+      const { checkAndSendScheduledEmail } = await import('./email.js');
+      await checkAndSendScheduledEmail();
+    } catch (err) {
+      log(`Lỗi kiểm tra email định kỳ: ${err.message}`);
+    }
+  }, 1000 * 60);
 }

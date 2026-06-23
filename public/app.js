@@ -237,6 +237,33 @@ async function loadConfig() {
     if (dataChatbotToken.value) {
       document.getElementById('chatbot-webhook-token').value = dataChatbotToken.value;
     }
+
+    // Load email report settings
+    const resSmtpHost = await fetch('/api/config/smtp_host');
+    const dataSmtpHost = await resSmtpHost.json();
+    if (dataSmtpHost.value) document.getElementById('smtp-host').value = dataSmtpHost.value;
+
+    const resSmtpPort = await fetch('/api/config/smtp_port');
+    const dataSmtpPort = await resSmtpPort.json();
+    if (dataSmtpPort.value) document.getElementById('smtp-port').value = dataSmtpPort.value;
+
+    const resSmtpUser = await fetch('/api/config/smtp_user');
+    const dataSmtpUser = await resSmtpUser.json();
+    if (dataSmtpUser.value) document.getElementById('smtp-user').value = dataSmtpUser.value;
+
+    const resSmtpPass = await fetch('/api/config/smtp_pass');
+    const dataSmtpPass = await resSmtpPass.json();
+    if (dataSmtpPass.value) document.getElementById('smtp-pass').value = dataSmtpPass.value;
+
+    const resReceiver = await fetch('/api/config/report_receiver');
+    const dataReceiver = await resReceiver.json();
+    if (dataReceiver.value) document.getElementById('report-receiver').value = dataReceiver.value;
+
+    const resEnabled = await fetch('/api/config/email_reporting_enabled');
+    const dataEnabled = await resEnabled.json();
+    if (dataEnabled.value) {
+      document.getElementById('email-reporting-enabled').checked = (dataEnabled.value === 'true');
+    }
   } catch (err) {
     console.error(err);
   }
@@ -268,6 +295,54 @@ async function saveChatbotConfig() {
       showToast('Đã lưu cấu hình Chatbot n8n thành công!', 'success');
     } else {
       showToast('Lỗi lưu cấu hình Chatbot!', 'error');
+    }
+  } catch (err) {
+    showToast(`Lỗi kết nối: ${err.message}`, 'error');
+  } finally {
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+}
+
+async function saveEmailConfig() {
+  const btn = document.getElementById('btn-save-email');
+  const originalText = btn.textContent;
+  btn.textContent = 'Đang lưu...';
+  btn.disabled = true;
+
+  const host = document.getElementById('smtp-host').value.trim();
+  const port = document.getElementById('smtp-port').value.trim();
+  const user = document.getElementById('smtp-user').value.trim();
+  const pass = document.getElementById('smtp-pass').value.trim();
+  const receiver = document.getElementById('report-receiver').value.trim();
+  const enabled = document.getElementById('email-reporting-enabled').checked ? 'true' : 'false';
+
+  try {
+    const configs = [
+      { key: 'smtp_host', value: host },
+      { key: 'smtp_port', value: port },
+      { key: 'smtp_user', value: user },
+      { key: 'smtp_pass', value: pass },
+      { key: 'report_receiver', value: receiver },
+      { key: 'email_reporting_enabled', value: enabled }
+    ];
+
+    let allOk = true;
+    for (const conf of configs) {
+      const res = await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(conf)
+      });
+      if (!res.ok) allOk = false;
+    }
+
+    if (allOk) {
+      appendConsole('Đã lưu cấu hình Email báo cáo thành công.', 'system');
+      showToast('Đã lưu cấu hình Email báo cáo thành công!', 'success');
+      loadConfig();
+    } else {
+      showToast('Lỗi lưu cấu hình Email!', 'error');
     }
   } catch (err) {
     showToast(`Lỗi kết nối: ${err.message}`, 'error');
@@ -835,6 +910,7 @@ function setupEventListeners() {
   document.getElementById('btn-add-queue').addEventListener('click', addToQueue);
   document.getElementById('btn-save-sheet').addEventListener('click', saveConfig);
   document.getElementById('btn-save-chatbot').addEventListener('click', saveChatbotConfig);
+  document.getElementById('btn-save-email').addEventListener('click', saveEmailConfig);
   
   const btnConnect = document.getElementById('btn-connect-zalo');
   if (btnConnect) btnConnect.addEventListener('click', connectZalo);

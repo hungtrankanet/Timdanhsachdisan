@@ -122,6 +122,13 @@ function initDb() {
     db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('n8n_webhook_token', 'n8n_zalo_secure_token_2026')");
     db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('n8n_chatbot_webhook_url', '')");
     db.run("INSERT OR IGNORE INTO users (username, password, role) VALUES ('admin', 'Toluckphattrien2026', 'admin')");
+    db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('smtp_host', 'smtp.gmail.com')");
+    db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('smtp_port', '587')");
+    db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('smtp_user', '')");
+    db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('smtp_pass', '')");
+    db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('smtp_from', '')");
+    db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('report_receiver', '')");
+    db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('email_reporting_enabled', 'false')");
     db.run("SELECT 1", () => {
       resolveDbReady();
     });
