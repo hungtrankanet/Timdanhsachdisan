@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import { all, run, get } from './database.js';
+import { all, run, get, dbReady } from './database.js';
 import { scrapeGoogleMaps } from './scraper.js';
 import { verifyLead } from './verifier.js';
 import { initZaloSession, sendZaloInvite, isZaloLoggedIn, closeZaloSession, syncZaloChat, restoreZaloSessions, sendZaloMessageDirect } from './zalo.js';
@@ -609,8 +609,12 @@ app.get('/api/logs', (req, res) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server started on http://localhost:${PORT}`);
-  startScheduler();
-  restoreZaloSessions().then(() => log('Khôi phục xong các phiên kết nối Zalo đã lưu.'));
+dbReady.then(() => {
+  app.listen(PORT, () => {
+    console.log(`Server started on http://localhost:${PORT}`);
+    startScheduler();
+    restoreZaloSessions().then(() => log('Khôi phục xong các phiên kết nối Zalo đã lưu.'));
+  });
+}).catch(err => {
+  console.error('Failed to initialize database, server cannot start:', err);
 });

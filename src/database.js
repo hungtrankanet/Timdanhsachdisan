@@ -13,9 +13,17 @@ if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
 }
 
+let resolveDbReady;
+let rejectDbReady;
+export const dbReady = new Promise((resolve, reject) => {
+  resolveDbReady = resolve;
+  rejectDbReady = reject;
+});
+
 const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
     console.error('Error opening database:', err);
+    rejectDbReady(err);
   } else {
     console.log('Database connected successfully at:', dbPath);
     initDb();
@@ -114,6 +122,9 @@ function initDb() {
     db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('n8n_webhook_token', 'n8n_zalo_secure_token_2026')");
     db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('n8n_chatbot_webhook_url', '')");
     db.run("INSERT OR IGNORE INTO users (username, password, role) VALUES ('admin', 'Toluckphattrien2026', 'admin')");
+    db.run("SELECT 1", () => {
+      resolveDbReady();
+    });
   });
 }
 
