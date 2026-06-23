@@ -122,15 +122,18 @@ export async function scrapeGoogleMaps(query, limit = 20, logCallback = log) {
             }
           }
 
-          return { brand_name, phone, website, address };
+          const categoryEl = document.querySelector('button[jsaction*="pane.rating.category"]') || 
+                             document.querySelector('[class*="fontBodyMedium"] button') ||
+                             document.querySelector('button[aria-label*="Category"]');
+          const category = categoryEl ? categoryEl.textContent.trim() : '';
+
+          return { brand_name, phone, website, address, category };
         });
 
         const { ward, district, city } = parseAddress(details.address);
         
         // Kiểm tra độ phù hợp chuyên ngành di sản sơn mài trước khi lưu
-        const isRelevant = await checkRelevance(details.brand_name, details.address, details.website, logCallback);
-        const initialVerifyStatus = isRelevant ? 'unverified' : 'pending_review';
-        const initialVerifyNotes = isRelevant ? null : 'Không khớp từ khóa chuyên ngành di sản sơn mài';
+        const relResult = await checkRelevance(details.brand_name, details.address, details.category, details.website, logCallback);
 
         const lead = {
           brand_name: details.brand_name,
@@ -140,12 +143,12 @@ export async function scrapeGoogleMaps(query, limit = 20, logCallback = log) {
           ward,
           district,
           city,
-          verification_status: initialVerifyStatus,
-          verification_notes: initialVerifyNotes,
+          verification_status: relResult.status,
+          verification_notes: `[Điểm: ${relResult.score}] ${relResult.reason}`,
           zalo_status: 'pending'
         };
 
-        logCallback(`Cào được: ${lead.brand_name} | SĐT: ${lead.phone || 'Không có'} | Web: ${lead.website || 'Không có'} | Trạng thái lọc: ${isRelevant ? 'Phù hợp' : 'Chờ duyệt'}`);
+        logCallback(`Cào được: ${lead.brand_name} | SĐT: ${lead.phone || 'Không có'} | Web: ${lead.website || 'Không có'} | Danh mục: "${details.category || 'Không có'}" | Trạng thái: ${lead.verification_status} (Điểm: ${relResult.score})`);
         
         if (lead.brand_name) {
           scrapedLeads.push(lead);
@@ -210,67 +213,212 @@ export async function scrapeGoogleMaps(query, limit = 20, logCallback = log) {
   }
 }
 
-export async function checkRelevance(brandName, address, websiteUrl, logCallback = log) {
-  const keywords = [
-    'sơn mài', 'son mai', 'lacquer', 'tranh vẽ', 'painting', 'mỹ nghệ', 'my nghe', 
-    'art', 'hội họa', 'hoi hoa', 'mỹ thuật', 'my thuat', 'khảm trai', 'kham trai', 
-    'tranh nghệ thuật', 'gallery', 'triển lãm', 'tác phẩm', 'di sản', 'heritage'
+export async function checkRelevance(brandName, address, category, websiteUrl, logCallback = log) {
+  let webContent = '';
+  if (websiteUrl && websiteUrl.trim() !== '') {
+    webContent = await fetchWebContent(websiteUrl, logCallback);
+  }
+  return evaluateRelevance(brandName, address, category, websiteUrl, webContent, logCallback);
+}
+
+export async function fetchWebContent(url, logCallback = log) {
+  if (!url) return '';
+  let targetUrl = url.trim();
+  if (!/^https?:\/\//i.test(targetUrl)) {
+    targetUrl = 'http://' + targetUrl;
+  }
+  
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 seconds timeout
+    
+    let userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
+    if (targetUrl.includes('facebook.com')) {
+      userAgent = 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)';
+    }
+
+    const response = await fetch(targetUrl, {
+      headers: { 
+        'User-Agent': userAgent,
+        'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7'
+      },
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeoutId);
+
+    if (response.ok) {
+      const html = await response.text();
+      const metaInfo = extractMetaDescription(html);
+      return html + ' ' + metaInfo;
+    } else {
+      logCallback(`[Fetch Web] Tải website thất bại (HTTP ${response.status}) cho: ${targetUrl}`);
+    }
+  } catch (err) {
+    logCallback(`[Fetch Web] Lỗi khi quét website ${targetUrl}: ${err.message}`);
+  }
+  return '';
+}
+
+function extractMetaDescription(html) {
+  let desc = '';
+  const ogDescMatch = html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i) ||
+                      html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:description["']/i);
+  if (ogDescMatch) {
+    desc += ' ' + ogDescMatch[1];
+  }
+  
+  const metaDescMatch = html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i) ||
+                        html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']description["']/i);
+  if (metaDescMatch) {
+    desc += ' ' + metaDescMatch[1];
+  }
+  
+  const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
+  if (titleMatch) {
+    desc += ' ' + titleMatch[1];
+  }
+  
+  return desc.trim();
+}
+
+export function evaluateRelevance(brandName, address, category, websiteUrl, webContent = '', logCallback = log) {
+  const keywordsT1 = [
+    'sơn mài', 'tranh sơn mài', 'lacquer', 'lacquer painting', 'lacquerware', 'sơn mài mỹ nghệ', 'sơn mài nghệ thuật', 'vóc sơn mài', 'xưởng sơn mài', 'làng nghề sơn mài',
+    'tranh nghệ thuật', 'phòng tranh', 'gallery', 'art gallery', 'mỹ thuật', 'fine art', 'tranh sơn dầu', 'tranh acrylic', 'họa sĩ', 'xưởng tranh', 'art studio',
+    'gốm sứ mỹ nghệ', 'gốm nghệ thuật', 'ceramic art', 'pottery', 'gốm thủ công', 'làng gốm', 'xưởng gốm',
+    'thổ cẩm', 'lụa thủ công', 'thêu tay', 'handmade', 'thủ công mỹ nghệ', 'handicraft', 'craft', 'artisan', 'nghệ nhân'
   ];
 
-  // 1. Kiểm tra trên Tên thương hiệu và Địa chỉ trước
-  const combinedInfo = `${brandName || ''} ${address || ''}`;
-  if (hasKeywords(combinedInfo, keywords)) {
-    logCallback(`[Lọc độ phù hợp] Khớp từ khóa trên thương hiệu/địa chỉ của: "${brandName}"`);
-    return true;
+  const keywordsT2 = [
+    'xưởng', 'studio', 'workshop', 'cơ sở sản xuất', 'nhà sản xuất', 'design', 'thiết kế', 'décor', 'decor', 'trang trí nội thất', 'quà tặng nghệ thuật', 'tranh trang trí', 'tranh treo tường', 'nội thất nghệ thuật', 'souvenir', 'craftsmanship'
+  ];
+
+  const categoriesT3 = [
+    'art gallery', 'art studio', 'artist', 'painting studio', 'pottery store', 'handicraft', 'craft store', 'art supply store', 'souvenir store', 'gift shop', 'manufacturer', 'art dealer', 'cultural center'
+  ];
+
+  const negativeKeywords = [
+    'sơn nước', 'sơn epoxy', 'sơn xe', 'sơn nhà', 'sơn ô tô', 'bột trét', 'vật liệu xây dựng', 'trang điểm', 'nail', 'phun xăm', 'spa', 'in ấn quảng cáo', 'quán cà phê', 'nhà hàng', 'karaoke'
+  ];
+
+  const textToSearch = `${brandName || ''} ${address || ''} ${category || ''} ${webContent || ''}`;
+  const searchBody = textToSearch.toLowerCase();
+  const searchBodyNoAccent = removeAccents(searchBody);
+
+  const matchedT1 = [];
+  keywordsT1.forEach(kw => {
+    const kwLower = kw.toLowerCase();
+    const kwNoAccent = removeAccents(kwLower);
+    if (searchBody.includes(kwLower) || searchBodyNoAccent.includes(kwNoAccent)) {
+      matchedT1.push(kw);
+    }
+  });
+
+  const matchedT2 = [];
+  keywordsT2.forEach(kw => {
+    const kwLower = kw.toLowerCase();
+    const kwNoAccent = removeAccents(kwLower);
+    if (searchBody.includes(kwLower) || searchBodyNoAccent.includes(kwNoAccent)) {
+      matchedT2.push(kw);
+    }
+  });
+
+  let matchedT3 = null;
+  if (category) {
+    const catLower = category.toLowerCase();
+    const catLowerNoAccent = removeAccents(catLower);
+    const foundCat = categoriesT3.find(cat => {
+      const cLower = cat.toLowerCase();
+      const cNoAccent = removeAccents(cLower);
+      return catLower.includes(cLower) || catLowerNoAccent.includes(cNoAccent);
+    });
+    if (foundCat) {
+      matchedT3 = category;
+    }
   }
 
-  // 2. Nếu có Website, cào thử website để tìm từ khóa
+  const matchedNegatives = [];
+  negativeKeywords.forEach(kw => {
+    const kwLower = kw.toLowerCase();
+    const kwNoAccent = removeAccents(kwLower);
+    if (searchBody.includes(kwLower) || searchBodyNoAccent.includes(kwNoAccent)) {
+      matchedNegatives.push(kw);
+    }
+  });
+
+  const hasNoiThatGo = searchBody.includes('nội thất gỗ') || searchBodyNoAccent.includes('noi that go');
+  const hasNgheThuat = searchBody.includes('nghệ thuật') || searchBody.includes('art') || searchBodyNoAccent.includes('nghe thuat');
+  if (hasNoiThatGo && !hasNgheThuat) {
+    matchedNegatives.push('nội thất gỗ (không nghệ thuật)');
+  }
+
+  let score = 0;
+  let reasons = [];
+
+  if (matchedT1.length > 0) {
+    score += matchedT1.length * 3;
+    reasons.push(`Khớp Tầng 1 (+${matchedT1.length * 3}đ): ${matchedT1.join(', ')}`);
+  }
+
+  if (matchedT1.length > 0 && matchedT2.length > 0) {
+    score += matchedT2.length * 1;
+    reasons.push(`Khớp Tầng 2 (+${matchedT2.length * 1}đ): ${matchedT2.join(', ')}`);
+  } else if (matchedT2.length > 0) {
+    reasons.push(`Khớp Tầng 2 nhưng không có Tầng 1 (0đ): ${matchedT2.join(', ')}`);
+  }
+
+  if (matchedT3) {
+    score += 2;
+    reasons.push(`Khớp Danh mục Tầng 3 (+2đ): ${matchedT3}`);
+  }
+
+  if (matchedNegatives.length > 0) {
+    if (matchedT1.length === 0) {
+      score -= matchedNegatives.length * 3;
+      reasons.push(`Khớp Từ khóa loại trừ khi không có Tầng 1 (-${matchedNegatives.length * 3}đ): ${matchedNegatives.join(', ')}`);
+    } else {
+      reasons.push(`Có từ khóa loại trừ nhưng được bỏ qua vì đã khớp Tầng 1: ${matchedNegatives.join(', ')}`);
+    }
+  }
+
   if (websiteUrl && websiteUrl.trim() !== '') {
-    let url = websiteUrl.trim();
-    if (!/^https?:\/\//i.test(url)) {
-      url = 'http://' + url;
-    }
-    
-    logCallback(`[Lọc độ phù hợp] Đang tải trang chủ website để kiểm tra từ khóa: ${url}`);
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 seconds timeout
+    if (webContent && webContent.trim() !== '') {
+      score += 0.5;
+      let webReasons = ['Website hoạt động (+0.5đ)'];
       
-      const response = await fetch(url, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-        signal: controller.signal
-      });
+      const hasImageTags = webContent.includes('<img') || webContent.includes('og:image');
+      const hasArtImageKeywords = ['gallery', 'photo', 'image', 'tác phẩm', 'san pham', 'sản phẩm', 'hình ảnh', 'hinh anh'].some(kw => webContent.toLowerCase().includes(kw));
       
-      clearTimeout(timeoutId);
-
-      if (response.ok) {
-        const html = await response.text();
-        const textContent = extractTextFromHtml(html);
-        if (hasKeywords(textContent, keywords)) {
-          logCallback(`[Lọc độ phù hợp] Khớp từ khóa trên website của: "${brandName}"`);
-          return true;
-        }
-      } else {
-        logCallback(`[Lọc độ phù hợp] Tải website thất bại (HTTP ${response.status}) cho: ${url}`);
+      if (hasImageTags && hasArtImageKeywords) {
+        score += 0.5;
+        webReasons.push('phát hiện hình ảnh nghệ thuật (+0.5đ)');
       }
-    } catch (err) {
-      logCallback(`[Lọc độ phù hợp] Lỗi khi quét website ${url}: ${err.message}`);
+      reasons.push(webReasons.join(' & '));
+    } else {
+      reasons.push('Có website nhưng tải lỗi/không hoạt động (0đ)');
     }
   }
 
-  logCallback(`[Lọc độ phù hợp] Không khớp từ khóa chuyên ngành di sản sơn mài cho: "${brandName}"`);
-  return false;
+  let status = 'rejected';
+  if (score >= 4) {
+    status = 'unverified';
+  } else if (score >= 2) {
+    status = 'pending_review';
+  }
+
+  const reasonString = reasons.join('; ');
+  logCallback(`[Chấm điểm độ phù hợp] Thương hiệu: "${brandName}" | Điểm: ${score} | Trạng thái: ${status} | Lý do: ${reasonString}`);
+
+  return { status, score, reason: reasonString };
 }
 
-function extractTextFromHtml(html) {
-  let text = html.replace(/<script[^>]*>([\s\S]*?)<\/script>/gi, '');
-  text = text.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, '');
-  text = text.replace(/<[^>]+>/g, ' ');
-  text = text.replace(/\s+/g, ' ');
-  return text.trim();
+function removeAccents(str) {
+  if (!str) return '';
+  return str
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[đĐ]/g, 'd')
+    .toLowerCase();
 }
 
-function hasKeywords(text, keywords) {
-  const lowerText = text.toLowerCase();
-  return keywords.some(kw => lowerText.includes(kw.toLowerCase()));
-}
