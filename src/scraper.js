@@ -287,7 +287,8 @@ export function evaluateRelevance(brandName, address, category, websiteUrl, webC
     'sơn mài', 'tranh sơn mài', 'lacquer', 'lacquer painting', 'lacquerware', 'sơn mài mỹ nghệ', 'sơn mài nghệ thuật', 'vóc sơn mài', 'xưởng sơn mài', 'làng nghề sơn mài',
     'tranh nghệ thuật', 'phòng tranh', 'gallery', 'art gallery', 'mỹ thuật', 'fine art', 'tranh sơn dầu', 'tranh acrylic', 'họa sĩ', 'xưởng tranh', 'art studio',
     'gốm sứ mỹ nghệ', 'gốm nghệ thuật', 'ceramic art', 'pottery', 'gốm thủ công', 'làng gốm', 'xưởng gốm',
-    'thổ cẩm', 'lụa thủ công', 'thêu tay', 'handmade', 'thủ công mỹ nghệ', 'handicraft', 'craft', 'artisan', 'nghệ nhân'
+    'thổ cẩm', 'lụa thủ công', 'thêu tay', 'handmade', 'thủ công mỹ nghệ', 'handicraft', 'craft', 'artisan', 'nghệ nhân',
+    'khung tranh', 'xưởng khung tranh', 'đóng khung tranh'
   ];
 
   const keywordsT2 = [
