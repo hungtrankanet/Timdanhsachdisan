@@ -5,11 +5,12 @@ services:
     build: .
     container_name: lacquer_heritage_scraper
     ports:
-      - "3000:3000"
+      - "3180:3180"
     volumes:
-      - ./data.db:/app/data.db
+      - ./data:/app/data
       - ./zalo_user_data:/app/zalo_user_data
     environment:
-      - PORT=3000
+      - PORT=3180
+      - DB_PATH=/app/data/data.db
       - NODE_ENV=production
     restart: unless-stopped

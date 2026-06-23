@@ -48,9 +48,9 @@ RUN npm install
 # Copy application source
 COPY . .
 
-EXPOSE 3000
+EXPOSE 3180
 
-ENV PORT=3000
+ENV PORT=3180
 ENV NODE_ENV=production
 
 CMD ["node", "src/server.js"]
