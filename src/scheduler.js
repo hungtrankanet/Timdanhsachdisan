@@ -5,8 +5,43 @@ import { verifyLead } from './verifier.js';
 import { sendZaloInvite, isZaloLoggedIn, syncZaloChat, initZaloSession, closeZaloSession } from './zalo.js';
 import { log, logMaps, logZalo } from './logger.js';
 
-let isWorkerRunning = false;
+let scraperBrowser = null;
+let verifierBrowser = null;
+let isScraperWorkerRunning = false;
+let isVerifierWorkerRunning = false;
 let isZaloWorkerRunning = false;
+
+async function closeScraperBrowser() {
+  if (scraperBrowser) {
+    try {
+      await scraperBrowser.close();
+      logMaps('[Scraper Worker] Đã đóng trình duyệt Scraper.');
+    } catch (e) {
+      logMaps(`Lỗi khi đóng trình duyệt Scraper: ${e.message}`);
+    } finally {
+      scraperBrowser = null;
+    }
+  }
+}
+
+async function closeVerifierBrowser() {
+  if (verifierBrowser) {
+    try {
+      await verifierBrowser.close();
+      logMaps('[Verifier Worker] Đã đóng trình duyệt Verifier.');
+    } catch (e) {
+      logMaps(`Lỗi khi đóng trình duyệt Verifier: ${e.message}`);
+    } finally {
+      verifierBrowser = null;
+    }
+  }
+}
+
+export async function closeWorkerBrowsers() {
+  logMaps('Đang đóng toàn bộ trình duyệt của các worker...');
+  await closeScraperBrowser();
+  await closeVerifierBrowser();
+}
 
 function isWithinWorkingHours() {
   const options = { timeZone: 'Asia/Ho_Chi_Minh', hour: 'numeric', minute: 'numeric', hour12: false };
@@ -28,121 +63,165 @@ function isWithinWorkingHours() {
   return isMorning || isAfternoon;
 }
 
-// Luồng 1: Tác vụ cào Google Maps & Xác thực số điện thoại
-export async function runQueueWorker() {
-  if (isWorkerRunning) return;
-  
-  // Tự động nhận diện cuộc gọi thủ công từ route API trong server.js
+export async function runScraperWorker() {
+  if (isScraperWorkerRunning) return;
+
   const stack = new Error().stack || '';
   const isManual = stack.includes('server.js') && !stack.includes('Timeout') && !stack.includes('Interval');
 
-  // Check if automation status is enabled in database
   const statusRow = await get('SELECT value FROM configs WHERE key = "scheduler_status"');
   const schedulerStatus = statusRow ? statusRow.value : 'idle';
-  
+
   if (!isManual && schedulerStatus !== 'active') {
-    logMaps('Tiến trình tự động hóa cào Maps đang tạm dừng (Idle).');
-    await run('INSERT OR REPLACE INTO configs (key, value) VALUES (?, ?)', ['current_task', 'Tạm dừng (Idle)']);
+    logMaps('[Scraper Worker] Tiến trình cào Maps tự động đang tạm dừng (Idle).');
+    await closeScraperBrowser();
     return;
   }
 
-  isWorkerRunning = true;
-  logMaps(isManual ? '--- KHỞI ĐỘNG CRAWLER QUEUE WORKER (THỦ CÔNG) ---' : '--- KHỞI ĐỘNG CRAWLER QUEUE WORKER ---');
+  isScraperWorkerRunning = true;
+  logMaps(isManual ? '--- KHỞI ĐỘNG SCRAPER WORKER (THỦ CÔNG) ---' : '--- KHỞI ĐỘNG SCRAPER WORKER ---');
 
   try {
-    // 1. Get next pending job from queue
     const job = await get('SELECT * FROM scheduler_queue WHERE status = "pending" ORDER BY id ASC LIMIT 1');
-    
     if (!job) {
-      logMaps('Hàng đợi cào trống! Đã xử lý toàn bộ từ khóa và địa điểm.');
-      await run('INSERT OR REPLACE INTO configs (key, value) VALUES (?, ?)', ['scheduler_status', 'idle']);
-      await run('INSERT OR REPLACE INTO configs (key, value) VALUES (?, ?)', ['current_task', 'Đã hoàn thành toàn bộ hàng đợi']);
-      isWorkerRunning = false;
+      logMaps('[Scraper Worker] Hàng đợi cào trống! Đã xử lý toàn bộ từ khóa và địa điểm.');
+      await closeScraperBrowser();
+      isScraperWorkerRunning = false;
       return;
     }
 
-    logMaps(`[Tác vụ mới] Bắt đầu xử lý hàng đợi ID ${job.id}: cào "${job.keyword}" tại "${job.location}"`);
+    logMaps(`[Scraper Worker] Bắt đầu xử lý hàng đợi ID ${job.id}: cào "${job.keyword}" tại "${job.location}"`);
     await run('UPDATE scheduler_queue SET status = "running", updated_at = CURRENT_TIMESTAMP WHERE id = ?', [job.id]);
     await run('INSERT OR REPLACE INTO configs (key, value) VALUES (?, ?)', ['current_task', `Đang cào: "${job.keyword}" tại "${job.location}"`]);
 
-    // 2. Google Maps Scraping (Targeting 50 leads)
-    const query = `${job.keyword} ${job.location}`;
-    const scrapedLeads = await scrapeGoogleMaps(query, 50);
-    const leadsCount = scrapedLeads.length;
-    logMaps(`Đã hoàn thành cào GMap. Tìm thấy ${leadsCount} leads.`);
-    
-    // Update queue job
-    await run('UPDATE scheduler_queue SET status = "completed", leads_found = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [leadsCount, job.id]);
-
-    // 3. Verify Leads (with 2 seconds delay to protect Google quota/IP block)
-    await run('INSERT OR REPLACE INTO configs (key, value) VALUES (?, ?)', ['current_task', `Đang xác thực thông tin cho ${leadsCount} leads vừa cào...`]);
-    const unverifiedLeads = await all('SELECT id FROM leads WHERE verification_status = "unverified" LIMIT 50');
-    logMaps(`Bắt đầu xác thực danh bạ cho ${unverifiedLeads.length} leads đang chờ...`);
-    
-    let sharedBrowser = null;
-    try {
-      if (unverifiedLeads.length > 0) {
-        sharedBrowser = await puppeteer.launch({
-          headless: true,
-          args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--disable-software-rasterizer',
-            '--disable-extensions',
-            '--no-first-run',
-            '--no-zygote',
-            '--disable-blink-features=AutomationControlled',
-            '--js-flags="--max-old-space-size=128"'
-          ],
-        });
-      }
-
-      for (const lead of unverifiedLeads) {
-        // Check scheduler status before each verification
-        const checkStatus = await get('SELECT value FROM configs WHERE key = "scheduler_status"');
-        if (!checkStatus || checkStatus.value !== 'active') {
-          logMaps('Tiến trình tự động hóa cào Maps bị tạm dừng trong khi đang xác thực. Dừng xác thực.');
-          break;
-        }
-
-        try {
-          await verifyLead(lead.id, logMaps, sharedBrowser);
-          await new Promise(r => setTimeout(r, 2000)); // 2 seconds delay for IP protection
-        } catch (err) {
-          logMaps(`Lỗi xác thực lead ID ${lead.id}: ${err.message}`);
-        }
-      }
-    } catch (launchErr) {
-      logMaps(`Lỗi khởi tạo trình duyệt dùng chung cho xác thực: ${launchErr.message}`);
-    } finally {
-      if (sharedBrowser) {
-        try {
-          await sharedBrowser.close();
-          logMaps('Đã đóng trình duyệt xác thực dùng chung.');
-        } catch (closeErr) {}
-      }
+    if (!scraperBrowser) {
+      logMaps('[Scraper Worker] Đang khởi chạy trình duyệt Scraper...');
+      scraperBrowser = await puppeteer.launch({
+        headless: true,
+        args: [
+          '--js-flags="--max-old-space-size=128"',
+          '--disable-gpu',
+          '--disable-software-rasterizer',
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-extensions',
+          '--no-first-run',
+          '--no-zygote',
+          '--disable-blink-features=AutomationControlled'
+        ]
+      });
     }
 
-    logMaps(`--- HOÀN TẤT TÁC VỤ HÀNG ĐỢI ID ${job.id} ---`);
-    await run('INSERT OR REPLACE INTO configs (key, value) VALUES (?, ?)', ['current_task', 'Đang nghỉ giải lao giữa các tác vụ...']);
+    const query = `${job.keyword} ${job.location}`;
+    const scrapedLeads = await scrapeGoogleMaps(query, 50, logMaps, scraperBrowser);
+    const leadsCount = scrapedLeads.length;
+    logMaps(`[Scraper Worker] Đã hoàn thành cào GMap. Tìm thấy ${leadsCount} leads.`);
+
+    await run('UPDATE scheduler_queue SET status = "completed", leads_found = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [leadsCount, job.id]);
+    logMaps(`--- HOÀN TẤT TÁC VỤ CÀO GMAP HÀNG ĐỢI ID ${job.id} ---`);
 
   } catch (err) {
-    logMaps(`Lỗi trong luồng Worker cào Maps: ${err.message}`);
+    logMaps(`[Scraper Worker] Lỗi trong Scraper Worker: ${err.message}`);
+    await closeScraperBrowser();
   } finally {
-    isWorkerRunning = false;
-    
-    // Check if worker should run the next job in the queue
+    isScraperWorkerRunning = false;
     const statusCheck = await get('SELECT value FROM configs WHERE key = "scheduler_status"');
     if (statusCheck && statusCheck.value === 'active') {
-      logMaps('Nghỉ giải lao 60 giây trước khi bắt đầu tác vụ tiếp theo...');
-      setTimeout(runQueueWorker, 60000);
+      logMaps('[Scraper Worker] Lập lịch cào lại sau 60 giây...');
+      setTimeout(runScraperWorker, 60000);
     } else {
+      await closeScraperBrowser();
       await run('INSERT OR REPLACE INTO configs (key, value) VALUES (?, ?)', ['current_task', 'Tạm dừng (Idle)']);
     }
   }
 }
+
+export async function runVerifierWorker() {
+  if (isVerifierWorkerRunning) return;
+
+  const stack = new Error().stack || '';
+  const isManual = stack.includes('server.js') && !stack.includes('Timeout') && !stack.includes('Interval');
+
+  const statusRow = await get('SELECT value FROM configs WHERE key = "scheduler_status"');
+  const schedulerStatus = statusRow ? statusRow.value : 'idle';
+
+  if (!isManual && schedulerStatus !== 'active') {
+    logMaps('[Verifier Worker] Tiến trình xác thực tự động đang tạm dừng (Idle).');
+    await closeVerifierBrowser();
+    return;
+  }
+
+  isVerifierWorkerRunning = true;
+  logMaps(isManual ? '--- KHỞI ĐỘNG VERIFIER WORKER (THỦ CÔNG) ---' : '--- KHỞI ĐỘNG VERIFIER WORKER ---');
+
+  try {
+    const unverifiedLeads = await all('SELECT id FROM leads WHERE verification_status = "unverified" LIMIT 50');
+    if (unverifiedLeads.length === 0) {
+      logMaps('[Verifier Worker] Không có lead nào cần xác thực. Đóng trình duyệt và tạm nghỉ.');
+      await closeVerifierBrowser();
+      isVerifierWorkerRunning = false;
+      return;
+    }
+
+    logMaps(`[Verifier Worker] Bắt đầu xác thực cho ${unverifiedLeads.length} leads...`);
+
+    if (!verifierBrowser) {
+      logMaps('[Verifier Worker] Đang khởi chạy trình duyệt Verifier...');
+      verifierBrowser = await puppeteer.launch({
+        headless: true,
+        args: [
+          '--js-flags="--max-old-space-size=128"',
+          '--disable-gpu',
+          '--disable-software-rasterizer',
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-extensions',
+          '--no-first-run',
+          '--no-zygote',
+          '--disable-blink-features=AutomationControlled'
+        ]
+      });
+    }
+
+    for (const lead of unverifiedLeads) {
+      const checkStatus = await get('SELECT value FROM configs WHERE key = "scheduler_status"');
+      if (!isManual && (!checkStatus || checkStatus.value !== 'active')) {
+        logMaps('[Verifier Worker] Lập lịch bị tạm dừng khi đang xác thực. Dừng.');
+        break;
+      }
+
+      try {
+        await verifyLead(lead.id, logMaps, verifierBrowser);
+        await new Promise(r => setTimeout(r, 2000));
+      } catch (err) {
+        logMaps(`[Verifier Worker] Lỗi xác thực lead ID ${lead.id}: ${err.message}`);
+      }
+    }
+
+    logMaps('--- HOÀN TẤT CHU KỲ XÁC THỰC VERIFIER WORKER ---');
+
+  } catch (err) {
+    logMaps(`[Verifier Worker] Lỗi trong Verifier Worker: ${err.message}`);
+    await closeVerifierBrowser();
+  } finally {
+    isVerifierWorkerRunning = false;
+    const statusCheck = await get('SELECT value FROM configs WHERE key = "scheduler_status"');
+    if (statusCheck && statusCheck.value === 'active') {
+      logMaps('[Verifier Worker] Lập lịch xác thực lại sau 30 giây...');
+      setTimeout(runVerifierWorker, 30000);
+    } else {
+      await closeVerifierBrowser();
+    }
+  }
+}
+
+export async function runQueueWorker() {
+  logMaps('Cảnh báo: runQueueWorker() được gọi. Tiến hành chạy song song cả scraper và verifier worker.');
+  return Promise.all([runScraperWorker(), runVerifierWorker()]);
+}
+
 
 // Luồng 2: Chiến dịch gửi tin nhắn kết bạn Zalo tự động (chạy song song dựa trên danh sách đã xác thực)
 export async function runZaloCampaignWorker() {
@@ -308,13 +387,14 @@ export async function runZaloCampaignWorker() {
 export function startScheduler() {
   logMaps('Bắt đầu khởi chạy bộ lập lịch tự động (Scheduled Check)...');
   
-  // Khởi động luồng 1 (Scraper & Verifier)
+  // Khởi động các worker cào & xác thực
   run('INSERT OR IGNORE INTO configs (key, value) VALUES (?, ?)', ['scheduler_status', 'active'])
     .then(() => {
-      runQueueWorker();
+      runScraperWorker();
+      runVerifierWorker();
     });
 
-  // Khởi động luồng 2 (Zalo Campaign)
+  // Khởi động luồng Zalo Campaign
   run('INSERT OR IGNORE INTO configs (key, value) VALUES (?, ?)', ['zalo_campaign_status', 'idle'])
     .then(() => {
       runZaloCampaignWorker();
@@ -323,8 +403,9 @@ export function startScheduler() {
   // Check queue status periodically every 5 minutes in case it was paused/resumed
   setInterval(async () => {
     const statusRow = await get('SELECT value FROM configs WHERE key = "scheduler_status"');
-    if (statusRow && statusRow.value === 'active' && !isWorkerRunning) {
-      runQueueWorker();
+    if (statusRow && statusRow.value === 'active') {
+      if (!isScraperWorkerRunning) runScraperWorker();
+      if (!isVerifierWorkerRunning) runVerifierWorker();
     }
   }, 1000 * 60 * 5);
 

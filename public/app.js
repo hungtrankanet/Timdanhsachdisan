@@ -32,6 +32,22 @@ function applyRoleBasedVisibility(role) {
   });
 }
 
+async function loadProgressStats() {
+  try {
+    const res = await fetch('/api/stats/progress');
+    if (!res.ok) return;
+    const data = await res.json();
+    const barTextEl = document.getElementById('progress-bar-text');
+    const barFillEl = document.getElementById('progress-bar-fill');
+    if (barTextEl && barFillEl) {
+      barTextEl.textContent = `Đã xác thực ${data.verified_leads.toLocaleString('vi-VN')} / ${data.target.toLocaleString('vi-VN')} nghệ nhân (${data.percentage}%)`;
+      barFillEl.style.width = `${data.percentage}%`;
+    }
+  } catch (err) {
+    console.error('Lỗi khi tải tiến độ chiến dịch:', err);
+  }
+}
+
 function initAppComponents() {
   loadLeads();
   loadConfig();
@@ -40,6 +56,7 @@ function initAppComponents() {
   updateSystemStatus();
   setupEventListeners();
   setupLogStream();
+  loadProgressStats();
   
   // Auto refresh leads table every 15 seconds
   setInterval(loadLeads, 15000);
@@ -47,6 +64,8 @@ function initAppComponents() {
   setInterval(loadQueue, 5000);
   // Auto check system status every 3 seconds
   setInterval(updateSystemStatus, 3000);
+  // Auto check progress stats every 10 seconds
+  setInterval(loadProgressStats, 10000);
   // Auto check accounts every 10 seconds
   setInterval(() => {
     if (window.loadAccounts) window.loadAccounts();

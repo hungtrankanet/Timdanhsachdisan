@@ -71,8 +71,11 @@ async function runAdversarialTests() {
     env: { ...process.env, PORT: '4567' }
   });
 
-  // Wait 3 seconds for server to start
-  await new Promise(resolve => setTimeout(resolve, 3000));
+  serverProcess.stdout.on('data', (data) => console.log(`[Server Stdout] ${data.trim()}`));
+  serverProcess.stderr.on('data', (data) => console.error(`[Server Stderr] ${data.trim()}`));
+
+  // Wait 6 seconds for server to start
+  await new Promise(resolve => setTimeout(resolve, 6000));
 
   try {
     // Request 1: Insert new unique entry via API

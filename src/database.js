@@ -164,4 +164,62 @@ export function all(sql, params = []) {
   });
 }
 
+export function normalizePhone(phoneStr) {
+  if (!phoneStr) return '';
+  const digits = String(phoneStr).replace(/\D/g, '');
+  if (digits.startsWith('84')) {
+    return '0' + digits.slice(2);
+  }
+  return digits;
+}
+
+export async function saveLeadWithDeduplication(lead, logCallback = console.log) {
+  const cleanBrand = lead.brand_name ? lead.brand_name.trim() : '';
+  if (!cleanBrand) return { success: false, reason: 'empty_brand' };
+
+  const normalizedPhone = normalizePhone(lead.phone);
+  const cleanAddress = lead.address ? lead.address.trim() : '';
+
+  // 1. Check if phone exists in leads table.
+  if (normalizedPhone) {
+    const dupPhone = await get("SELECT id, brand_name FROM leads WHERE phone = ?", [normalizedPhone]);
+    if (dupPhone) {
+      logCallback(`[Deduplication] SĐT "${normalizedPhone}" đã tồn tại trên ID ${dupPhone.id} ("${dupPhone.brand_name}"). Bỏ qua.`);
+      return { success: false, reason: 'phone_exists' };
+    }
+  }
+
+  // 2. Check if brand_name and address exists as a pair.
+  const dupPlace = await get(
+    "SELECT id, phone FROM leads WHERE brand_name = ? AND (address = ? OR (address IS NULL AND ? = ''))",
+    [cleanBrand, cleanAddress, cleanAddress]
+  );
+
+  if (dupPlace) {
+    const existingPhone = normalizePhone(dupPlace.phone);
+    if (normalizedPhone && normalizedPhone !== existingPhone) {
+      logCallback(`[Deduplication] Trùng thương hiệu & địa điểm nhưng có SĐT mới. Cập nhật ID ${dupPlace.id}.`);
+      await run(
+        `UPDATE leads 
+         SET phone = ?, website = ?, facebook = ?, ward = ?, district = ?, city = ?, 
+             verification_status = 'unverified', verification_notes = ?, zalo_status = 'pending', updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [normalizedPhone, lead.website || null, lead.facebook || null, lead.ward || null, lead.district || null, lead.city || null, lead.verification_notes || 'Cập nhật SĐT từ trình cào', dupPlace.id]
+      );
+      return { success: true, action: 'updated', id: dupPlace.id };
+    } else {
+      logCallback(`[Deduplication] Trùng thương hiệu & địa điểm. Bỏ qua.`);
+      return { success: false, reason: 'duplicate_place' };
+    }
+  }
+
+  // 3. New insert
+  const res = await run(
+    `INSERT INTO leads (brand_name, phone, website, facebook, address, ward, district, city, verification_status, verification_notes, zalo_status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'unverified', ?, 'pending')`,
+    [cleanBrand, normalizedPhone || null, lead.website || null, lead.facebook || null, cleanAddress || null, lead.ward || null, lead.district || null, lead.city || null, lead.verification_notes || null]
+  );
+  return { success: true, action: 'inserted', id: res.id };
+}
+
 export default db;

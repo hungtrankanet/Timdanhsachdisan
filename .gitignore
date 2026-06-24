@@ -27,3 +27,11 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# Custom test scripts, backups and agent runs
+scratch/
+test_deduplication.js
+test_deduplication_adversarial.js
+zalo_user_data.zip
+.agents/
+

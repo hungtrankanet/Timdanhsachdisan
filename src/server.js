@@ -10,7 +10,7 @@ import { verifyLead } from './verifier.js';
 import { restoreZaloSessions } from './zalo.js';
 import { logger, log } from './logger.js';
 import zaloRoutes from './routes_zalo.js';
-import { startScheduler, runQueueWorker, runZaloCampaignWorker } from './scheduler.js';
+import { startScheduler, runQueueWorker, runZaloCampaignWorker, runScraperWorker, runVerifierWorker, closeWorkerBrowsers } from './scheduler.js';
 import { sendDailyReport } from './email.js';
 import { startReEvaluatorWorker } from './re-evaluator.js';
 
@@ -29,110 +29,49 @@ app.use(express.static(join(__dirname, '../public')));
 app.use(zaloRoutes);
 
 // 1. API: List all leads
-app.get('/api/leads', async (req, res) => {
-  try {
-    const leads = await all('SELECT * FROM leads ORDER BY created_at DESC');
-    res.json(leads);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+app.get('/api/leads', (req, res) => {
+  all('SELECT * FROM leads ORDER BY created_at DESC').then(d => res.json(d)).catch(e => res.status(500).json({ error: e.message }));
 });
-
 // 1b. API: List pending review leads
-app.get('/api/leads/pending_review', async (req, res) => {
-  try {
-    const leads = await all("SELECT id, brand_name, phone, website, address, verification_notes, created_at FROM leads WHERE verification_status = 'pending_review' ORDER BY id DESC");
-    res.json(leads);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+app.get('/api/leads/pending_review', (req, res) => {
+  all("SELECT id, brand_name, phone, website, address, verification_notes, created_at FROM leads WHERE verification_status = 'pending_review' ORDER BY id DESC").then(d => res.json(d)).catch(e => res.status(500).json({ error: e.message }));
 });
-
 // 1c. API: Approve a lead
-app.post('/api/leads/:id/approve', async (req, res) => {
-  try {
-    await run("UPDATE leads SET verification_status = 'unverified', verification_notes = 'Được phê duyệt thủ công bởi quản trị viên', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [req.params.id]);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+app.post('/api/leads/:id/approve', (req, res) => {
+  run("UPDATE leads SET verification_status = 'unverified', verification_notes = 'Được phê duyệt thủ công bởi quản trị viên', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [req.params.id]).then(() => res.json({ success: true })).catch(e => res.status(500).json({ error: e.message }));
 });
-
 // 1d. API: Reject a lead
-app.post('/api/leads/:id/reject', async (req, res) => {
-  try {
-    await run("UPDATE leads SET verification_status = 'rejected', verification_notes = 'Bị bác bỏ bởi quản trị viên', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [req.params.id]);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+app.post('/api/leads/:id/reject', (req, res) => {
+  run("UPDATE leads SET verification_status = 'rejected', verification_notes = 'Bị bác bỏ bởi quản trị viên', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [req.params.id]).then(() => res.json({ success: true })).catch(e => res.status(500).json({ error: e.message }));
 });
-
 // 1e. API: Approve all pending review leads
-app.post('/api/leads/pending_review/approve-all', async (req, res) => {
-  try {
-    await run("UPDATE leads SET verification_status = 'unverified', verification_notes = 'Được phê duyệt hàng loạt bởi quản trị viên', updated_at = CURRENT_TIMESTAMP WHERE verification_status = 'pending_review'");
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+app.post('/api/leads/pending_review/approve-all', (req, res) => {
+  run("UPDATE leads SET verification_status = 'unverified', verification_notes = 'Được phê duyệt hàng loạt bởi quản trị viên', updated_at = CURRENT_TIMESTAMP WHERE verification_status = 'pending_review'").then(() => res.json({ success: true })).catch(e => res.status(500).json({ error: e.message }));
 });
-
 // 1f. API: Reject all pending review leads
-app.post('/api/leads/pending_review/reject-all', async (req, res) => {
-  try {
-    await run("UPDATE leads SET verification_status = 'rejected', verification_notes = 'Bị bác bỏ hàng loạt bởi quản trị viên', updated_at = CURRENT_TIMESTAMP WHERE verification_status = 'pending_review'");
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+app.post('/api/leads/pending_review/reject-all', (req, res) => {
+  run("UPDATE leads SET verification_status = 'rejected', verification_notes = 'Bị bác bỏ hàng loạt bởi quản trị viên', updated_at = CURRENT_TIMESTAMP WHERE verification_status = 'pending_review'").then(() => res.json({ success: true })).catch(e => res.status(500).json({ error: e.message }));
 });
-
 // 1g. API: Delete a single lead
-app.delete('/api/leads/:id', async (req, res) => {
-  try {
-    await run("DELETE FROM leads WHERE id = ?", [req.params.id]);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+app.delete('/api/leads/:id', (req, res) => {
+  run("DELETE FROM leads WHERE id = ?", [req.params.id]).then(() => res.json({ success: true })).catch(e => res.status(500).json({ error: e.message }));
 });
-
 // 1h. API: Bulk delete leads
-app.post('/api/leads/bulk-delete', async (req, res) => {
-  try {
-    const { ids } = req.body;
-    if (!Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({ error: 'Danh sách ID không hợp lệ.' });
-    }
-    const placeholders = ids.map(() => '?').join(',');
-    await run(`DELETE FROM leads WHERE id IN (${placeholders})`, ids);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+app.post('/api/leads/bulk-delete', (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'Danh sách ID không hợp lệ.' });
+  const placeholders = ids.map(() => '?').join(',');
+  run(`DELETE FROM leads WHERE id IN (${placeholders})`, ids).then(() => res.json({ success: true })).catch(e => res.status(500).json({ error: e.message }));
 });
-
 // 2. API: Save config key-value
-app.post('/api/config', async (req, res) => {
+app.post('/api/config', (req, res) => {
   const { key, value } = req.body;
   if (!key) return res.status(400).json({ error: 'Missing key' });
-  try {
-    await run('INSERT OR REPLACE INTO configs (key, value) VALUES (?, ?)', [key, value]);
-    res.json({ success: true, key, value });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  run('INSERT OR REPLACE INTO configs (key, value) VALUES (?, ?)', [key, value]).then(() => res.json({ success: true, key, value })).catch(e => res.status(500).json({ error: e.message }));
 });
-
 // 3. API: Get config
-app.get('/api/config/:key', async (req, res) => {
-  try {
-    const row = await get('SELECT value FROM configs WHERE key = ?', [req.params.key]);
-    res.json({ key: req.params.key, value: row ? row.value : null });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+app.get('/api/config/:key', (req, res) => {
+  get('SELECT value FROM configs WHERE key = ?', [req.params.key]).then(row => res.json({ key: req.params.key, value: row ? row.value : null })).catch(e => res.status(500).json({ error: e.message }));
 });
 
 // 4. API: Start Scraping Job (Async)
@@ -173,13 +112,16 @@ app.post('/api/verify/:id', async (req, res) => {
 
 
 
-// 9b. API: Force scheduler execution (runQueueWorker)
+// 9b. API: Force scheduler execution (runScraperWorker & runVerifierWorker in parallel)
 app.post('/api/scheduler/force', async (req, res) => {
   log('Kích hoạt chạy luồng Worker thủ công...');
-  runQueueWorker()
+  Promise.all([
+    runScraperWorker(),
+    runVerifierWorker()
+  ])
     .then(() => log('Hoàn thành chạy luồng Worker thủ công.'))
     .catch(err => log(`Lỗi luồng Worker: ${err.message}`));
-  res.json({ status: 'started', message: 'Queue worker executed.' });
+  res.json({ status: 'started', message: 'Queue workers executed.' });
 });
 
 // 9c. API: Toggle scheduler status
@@ -190,7 +132,10 @@ app.post('/api/scheduler/toggle', async (req, res) => {
     await run('INSERT OR REPLACE INTO configs (key, value) VALUES (?, ?)', ['scheduler_status', status]);
     log(`Đã thay đổi trạng thái Tự động hóa sang: "${status}"`);
     if (status === 'active') {
-      runQueueWorker(); // Trigger worker
+      runScraperWorker();
+      runVerifierWorker();
+    } else {
+      closeWorkerBrowsers();
     }
     res.json({ success: true, status });
   } catch (err) {
@@ -231,6 +176,28 @@ app.get('/api/status', async (req, res) => {
       current_task: taskRow ? taskRow.value : 'Tạm dừng (Idle)',
       zalo_logged_in: loggedIn,
       sheets_configured: !!(sheetsRow && sheetsRow.value)
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/stats/progress
+app.get('/api/stats/progress', async (req, res) => {
+  try {
+    const totalRow = await get('SELECT COUNT(*) as count FROM leads');
+    const verifiedRow = await get("SELECT COUNT(*) as count FROM leads WHERE verification_status IN ('verified', 'partially_verified')");
+    
+    const total_leads = totalRow ? totalRow.count : 0;
+    const verified_leads = verifiedRow ? verifiedRow.count : 0;
+    const target = 10000;
+    const percentage = Math.min(100, Number(((verified_leads / target) * 100).toFixed(2)));
+    
+    res.json({
+      total_leads,
+      verified_leads,
+      target,
+      percentage
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
