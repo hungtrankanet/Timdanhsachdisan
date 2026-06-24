@@ -136,10 +136,14 @@
         <div class="glass-card">
           <div class="card-header">
             <h2>Hàng đợi cào dữ liệu (Crawler Queue)</h2>
-            <div class="lead-actions" style="display: flex; gap: 10px;">
-              <input type="text" id="queue-keyword" placeholder="Từ khóa (vd: sơn mài)" style="background: rgba(0,0,0,0.5); border: 1px solid var(--card-border); padding: 6px 10px; border-radius: 6px; color: #fff; font-size: 12px; width: 140px;">
-              <input type="text" id="queue-location" placeholder="Địa điểm (vd: Quận 1, HCM)" style="background: rgba(0,0,0,0.5); border: 1px solid var(--card-border); padding: 6px 10px; border-radius: 6px; color: #fff; font-size: 12px; width: 160px;">
-              <button id="btn-add-queue" class="btn btn-secondary btn-sm">Thêm Hàng Đợi</button>
+            <div class="lead-actions" style="display: flex; gap: 8px; align-items: center;">
+              <input type="text" id="queue-keyword" placeholder="Từ khóa (vd: sơn mài)" style="background: rgba(0,0,0,0.5); border: 1px solid var(--card-border); padding: 6px 10px; border-radius: 6px; color: #fff; font-size: 12px; width: 130px;">
+              <input type="text" id="queue-location" placeholder="Địa điểm (vd: Quận 1, HCM)" style="background: rgba(0,0,0,0.5); border: 1px solid var(--card-border); padding: 6px 10px; border-radius: 6px; color: #fff; font-size: 12px; width: 140px;">
+              <button id="btn-add-queue" class="btn btn-secondary btn-sm">Thêm</button>
+              <span style="color: var(--card-border); margin: 0 2px;">|</span>
+              <button id="btn-import-csv" class="btn btn-primary-outline btn-sm">Nhập CSV</button>
+              <button id="btn-download-template" class="btn btn-primary-outline btn-sm" style="font-size: 11px;">Tải Mẫu</button>
+              <input type="file" id="queue-csv-file" accept=".csv" style="display: none;">
             </div>
           </div>
           <div class="table-wrapper" style="max-height: 350px; overflow-y: auto;">
@@ -441,5 +445,6 @@
   <script src="app.js" defer></script>
   <script src="accounts.js" defer></script>
   <script src="inbox.js" defer></script>
+  <script src="csv_import.js" defer></script>
 </body>
 </html>
