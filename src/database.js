@@ -26,7 +26,11 @@ const db = new sqlite3.Database(dbPath, (err) => {
     rejectDbReady(err);
   } else {
     console.log('Database connected successfully at:', dbPath);
-    initDb();
+    db.serialize(() => {
+      db.run('PRAGMA journal_mode = WAL');
+      db.run('PRAGMA busy_timeout = 30000');
+      initDb();
+    });
   }
 });
 
@@ -166,10 +170,37 @@ export function all(sql, params = []) {
 
 export function normalizePhone(phoneStr) {
   if (!phoneStr) return '';
-  const digits = String(phoneStr).replace(/\D/g, '');
-  if (digits.startsWith('84')) {
-    return '0' + digits.slice(2);
+  let clean = String(phoneStr).toLowerCase();
+  
+  // 1. Remove extension suffixes
+  clean = clean.replace(/(?:\b(?:ext(?:ension)?|máy\s*lẻ|máy\s*nhánh|lẻ|line|ep)\b\.?\s*\d+)/i, '');
+  clean = clean.replace(/(?:\s+x\s*\d+)/i, '');
+
+  // 2. Remove bracketed zero
+  clean = clean.replace(/\(\s*0\s*\)/g, '');
+  clean = clean.replace(/\[\s*0\s*\]/g, '');
+
+  // 3. Extract only digits
+  let digits = clean.replace(/\D/g, '');
+  if (!digits) return '';
+
+  // 4. Handle double zero prefix
+  if (digits.startsWith('0084')) {
+    digits = digits.slice(2);
   }
+
+  // 5. Handle Vietnam country code and redundant zeroes
+  if (digits.startsWith('840')) {
+    digits = '0' + digits.slice(3);
+  } else if (digits.startsWith('84')) {
+    digits = '0' + digits.slice(2);
+  }
+
+  // 6. Handle domestic double zero prefix
+  if (digits.startsWith('00')) {
+    digits = '0' + digits.replace(/^0+/, '');
+  }
+
   return digits;
 }
 
@@ -180,46 +211,65 @@ export async function saveLeadWithDeduplication(lead, logCallback = console.log)
   const normalizedPhone = normalizePhone(lead.phone);
   const cleanAddress = lead.address ? lead.address.trim() : '';
 
-  // 1. Check if phone exists in leads table.
-  if (normalizedPhone) {
-    const dupPhone = await get("SELECT id, brand_name FROM leads WHERE phone = ?", [normalizedPhone]);
-    if (dupPhone) {
-      logCallback(`[Deduplication] SĐT "${normalizedPhone}" đã tồn tại trên ID ${dupPhone.id} ("${dupPhone.brand_name}"). Bỏ qua.`);
+  try {
+    // 1. Check if phone exists in leads table.
+    if (normalizedPhone) {
+      const dupPhone = await get("SELECT id, brand_name FROM leads WHERE phone = ?", [normalizedPhone]);
+      if (dupPhone) {
+        logCallback(`[Deduplication] SĐT "${normalizedPhone}" đã tồn tại trên ID ${dupPhone.id} ("${dupPhone.brand_name}"). Bỏ qua.`);
+        return { success: false, reason: 'phone_exists' };
+      }
+    }
+
+    // 2. Check if brand_name and address exists as a pair (Case-Insensitive).
+    const dupPlace = await get(
+      `SELECT id, phone 
+       FROM leads 
+       WHERE LOWER(brand_name) = LOWER(?) 
+         AND (LOWER(address) = LOWER(?) OR (address IS NULL AND ? = ''))`,
+      [cleanBrand, cleanAddress, cleanAddress]
+    );
+
+    if (dupPlace) {
+      const existingPhone = normalizePhone(dupPlace.phone);
+      if (normalizedPhone && normalizedPhone !== existingPhone) {
+        logCallback(`[Deduplication] Trùng thương hiệu & địa điểm nhưng có SĐT mới. Cập nhật ID ${dupPlace.id}.`);
+        await run(
+          `UPDATE leads 
+           SET phone = COALESCE(?, phone), 
+               website = COALESCE(?, website), 
+               facebook = COALESCE(?, facebook), 
+               ward = COALESCE(?, ward), 
+               district = COALESCE(?, district), 
+               city = COALESCE(?, city), 
+               verification_status = 'unverified', 
+               verification_notes = COALESCE(?, verification_notes, 'Cập nhật SĐT từ trình cào'), 
+               zalo_status = 'pending', 
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+          [normalizedPhone || null, lead.website || null, lead.facebook || null, lead.ward || null, lead.district || null, lead.city || null, lead.verification_notes || null, dupPlace.id]
+        );
+        return { success: true, action: 'updated', id: dupPlace.id };
+      } else {
+        logCallback(`[Deduplication] Trùng thương hiệu & địa điểm. Bỏ qua.`);
+        return { success: false, reason: 'duplicate_place' };
+      }
+    }
+
+    // 3. New insert
+    const res = await run(
+      `INSERT INTO leads (brand_name, phone, website, facebook, address, ward, district, city, verification_status, verification_notes, zalo_status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'unverified', ?, 'pending')`,
+      [cleanBrand, normalizedPhone || null, lead.website || null, lead.facebook || null, cleanAddress || null, lead.ward || null, lead.district || null, lead.city || null, lead.verification_notes || null]
+    );
+    return { success: true, action: 'inserted', id: res.id };
+  } catch (err) {
+    if (err.message && (err.message.includes('UNIQUE constraint failed') || err.code === 'SQLITE_CONSTRAINT')) {
+      logCallback(`[Deduplication] Lỗi ràng buộc duy nhất (Unique constraint): ${err.message}`);
       return { success: false, reason: 'phone_exists' };
     }
+    throw err;
   }
-
-  // 2. Check if brand_name and address exists as a pair.
-  const dupPlace = await get(
-    "SELECT id, phone FROM leads WHERE brand_name = ? AND (address = ? OR (address IS NULL AND ? = ''))",
-    [cleanBrand, cleanAddress, cleanAddress]
-  );
-
-  if (dupPlace) {
-    const existingPhone = normalizePhone(dupPlace.phone);
-    if (normalizedPhone && normalizedPhone !== existingPhone) {
-      logCallback(`[Deduplication] Trùng thương hiệu & địa điểm nhưng có SĐT mới. Cập nhật ID ${dupPlace.id}.`);
-      await run(
-        `UPDATE leads 
-         SET phone = ?, website = ?, facebook = ?, ward = ?, district = ?, city = ?, 
-             verification_status = 'unverified', verification_notes = ?, zalo_status = 'pending', updated_at = CURRENT_TIMESTAMP
-         WHERE id = ?`,
-        [normalizedPhone, lead.website || null, lead.facebook || null, lead.ward || null, lead.district || null, lead.city || null, lead.verification_notes || 'Cập nhật SĐT từ trình cào', dupPlace.id]
-      );
-      return { success: true, action: 'updated', id: dupPlace.id };
-    } else {
-      logCallback(`[Deduplication] Trùng thương hiệu & địa điểm. Bỏ qua.`);
-      return { success: false, reason: 'duplicate_place' };
-    }
-  }
-
-  // 3. New insert
-  const res = await run(
-    `INSERT INTO leads (brand_name, phone, website, facebook, address, ward, district, city, verification_status, verification_notes, zalo_status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'unverified', ?, 'pending')`,
-    [cleanBrand, normalizedPhone || null, lead.website || null, lead.facebook || null, cleanAddress || null, lead.ward || null, lead.district || null, lead.city || null, lead.verification_notes || null]
-  );
-  return { success: true, action: 'inserted', id: res.id };
 }
 
 export default db;

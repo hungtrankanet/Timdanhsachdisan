@@ -1,7 +1,7 @@
 import assert from 'assert';
-import { run, get, all } from './src/database.js';
+import { run, get, all, normalizePhone } from './src/database.js';
 import { parseAddress } from './src/scraper.js';
-import { normalizePhone, extractPhones, extractFacebookLinks } from './src/verifier.js';
+import { extractPhones, extractFacebookLinks } from './src/verifier.js';
 
 async function runTests() {
   console.log('--- BẮT ĐẦU CHẠY KIỂM THỬ TỰ ĐỘNG ---');

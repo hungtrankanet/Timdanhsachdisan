@@ -1,17 +1,7 @@
 import puppeteer from 'puppeteer';
-import { run, get } from './database.js';
+import { run, get, normalizePhone } from './database.js';
 import { syncLeadToSheet } from './sheets.js';
 import { log } from './logger.js';
-
-// Helper to normalize phone numbers for comparison
-export function normalizePhone(phoneStr) {
-  if (!phoneStr) return '';
-  let clean = phoneStr.replace(/\D/g, '');
-  if (clean.startsWith('84')) {
-    clean = '0' + clean.slice(2);
-  }
-  return clean;
-}
 
 // Extract phone numbers from a page body string
 export function extractPhones(text) {

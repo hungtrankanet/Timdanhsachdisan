@@ -384,9 +384,21 @@ export async function runZaloCampaignWorker() {
   }
 }
 
-export function startScheduler() {
+export async function startScheduler() {
   logMaps('Bắt đầu khởi chạy bộ lập lịch tự động (Scheduled Check)...');
   
+  // Tự động khôi phục các tác vụ cào bị kẹt (running -> pending) khi khởi động
+  try {
+    const resetResult = await run(
+      "UPDATE scheduler_queue SET status = 'pending', updated_at = CURRENT_TIMESTAMP WHERE status = 'running'"
+    );
+    if (resetResult && resetResult.changes > 0) {
+      logMaps(`[Scheduler] Đã tự động khôi phục ${resetResult.changes} tác vụ bị kẹt ở trạng thái "running" về "pending".`);
+    }
+  } catch (err) {
+    logMaps(`[Scheduler Error] Lỗi khi tự động khôi phục tác vụ kẹt: ${err.message}`);
+  }
+
   // Khởi động các worker cào & xác thực
   run('INSERT OR IGNORE INTO configs (key, value) VALUES (?, ?)', ['scheduler_status', 'active'])
     .then(() => {
