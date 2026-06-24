@@ -32,18 +32,22 @@ function isWithinWorkingHours() {
 export async function runQueueWorker() {
   if (isWorkerRunning) return;
   
+  // Tự động nhận diện cuộc gọi thủ công từ route API trong server.js
+  const stack = new Error().stack || '';
+  const isManual = stack.includes('server.js') && !stack.includes('Timeout') && !stack.includes('Interval');
+
   // Check if automation status is enabled in database
   const statusRow = await get('SELECT value FROM configs WHERE key = "scheduler_status"');
   const schedulerStatus = statusRow ? statusRow.value : 'idle';
   
-  if (schedulerStatus !== 'active') {
+  if (!isManual && schedulerStatus !== 'active') {
     logMaps('Tiến trình tự động hóa cào Maps đang tạm dừng (Idle).');
     await run('INSERT OR REPLACE INTO configs (key, value) VALUES (?, ?)', ['current_task', 'Tạm dừng (Idle)']);
     return;
   }
 
   isWorkerRunning = true;
-  logMaps('--- KHỞI ĐỘNG CRAWLER QUEUE WORKER ---');
+  logMaps(isManual ? '--- KHỞI ĐỘNG CRAWLER QUEUE WORKER (THỦ CÔNG) ---' : '--- KHỞI ĐỘNG CRAWLER QUEUE WORKER ---');
 
   try {
     // 1. Get next pending job from queue
