@@ -20,7 +20,18 @@ export async function scrapeGoogleMaps(query, limit = 20, logCallback = log) {
   
   const browser = await puppeteer.launch({
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--lang=vi-VN'],
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--lang=vi-VN',
+      '--disable-gpu',
+      '--disable-software-rasterizer',
+      '--disable-extensions',
+      '--no-first-run',
+      '--no-zygote',
+      '--js-flags="--max-old-space-size=128"'
+    ],
   });
 
   const page = await browser.newPage();

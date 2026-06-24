@@ -3,8 +3,19 @@ import { fetchWebContent, evaluateRelevance } from './scraper.js';
 import { log } from './logger.js';
 
 let isReEvaluating = false;
+let reEvaluatorInterval = null;
 
 export async function startReEvaluatorWorker() {
+  try {
+    const completedRow = await get('SELECT value FROM configs WHERE key = "re_evaluator_completed"');
+    if (completedRow && completedRow.value === 'true') {
+      log('[Re-Evaluator] Đã hoàn thành tra soát dữ liệu cũ trước đó. Worker dừng hoạt động.');
+      return;
+    }
+  } catch (err) {
+    log(`[Re-Evaluator Error] Lỗi khi kiểm tra cấu hình hoàn thành: ${err.message}`);
+  }
+
   log('[Re-Evaluator] Khởi động bộ lập lịch tra soát dữ liệu cũ tự động...');
   
   // Auto-recover previously rejected/pending framing shops to re-evaluate them under the new rules
@@ -33,7 +44,7 @@ export async function startReEvaluatorWorker() {
     log(`[Re-Evaluator Error] Lỗi vòng chạy: ${err.message}`);
   });
 
-  setInterval(() => {
+  reEvaluatorInterval = setInterval(() => {
     runReEvaluationCycle().catch(err => {
       log(`[Re-Evaluator Error] Lỗi vòng chạy: ${err.message}`);
     });
@@ -41,6 +52,20 @@ export async function startReEvaluatorWorker() {
 }
 
 async function runReEvaluationCycle() {
+  try {
+    const completedRow = await get('SELECT value FROM configs WHERE key = "re_evaluator_completed"');
+    if (completedRow && completedRow.value === 'true') {
+      log('[Re-Evaluator] Tra soát hoàn thành. Đang dọn dẹp bộ lập lịch...');
+      if (reEvaluatorInterval) {
+        clearInterval(reEvaluatorInterval);
+        reEvaluatorInterval = null;
+      }
+      return;
+    }
+  } catch (err) {
+    log(`[Re-Evaluator Error] Lỗi kiểm tra hoàn thành trong chu kỳ: ${err.message}`);
+  }
+
   if (isReEvaluating) {
     log('[Re-Evaluator] Vòng chạy trước vẫn đang xử lý. Bỏ qua chu kỳ này.');
     return;
@@ -59,7 +84,12 @@ async function runReEvaluationCycle() {
     );
 
     if (unscoredLeads.length === 0) {
-      log('[Re-Evaluator] Không phát hiện địa điểm cũ nào chưa được chấm điểm.');
+      log('[Re-Evaluator] Không phát hiện địa điểm cũ nào chưa được chấm điểm. Đã hoàn thành nhiệm vụ và dừng worker.');
+      await run('INSERT OR REPLACE INTO configs (key, value) VALUES (?, ?)', ['re_evaluator_completed', 'true']);
+      if (reEvaluatorInterval) {
+        clearInterval(reEvaluatorInterval);
+        reEvaluatorInterval = null;
+      }
       isReEvaluating = false;
       return;
     }

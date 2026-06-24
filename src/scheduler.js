@@ -1,7 +1,8 @@
+import puppeteer from 'puppeteer';
 import { get, run, all } from './database.js';
 import { scrapeGoogleMaps } from './scraper.js';
 import { verifyLead } from './verifier.js';
-import { sendZaloInvite, isZaloLoggedIn, syncZaloChat } from './zalo.js';
+import { sendZaloInvite, isZaloLoggedIn, syncZaloChat, initZaloSession, closeZaloSession } from './zalo.js';
 import { log, logMaps, logZalo } from './logger.js';
 
 let isWorkerRunning = false;
@@ -74,19 +75,48 @@ export async function runQueueWorker() {
     const unverifiedLeads = await all('SELECT id FROM leads WHERE verification_status = "unverified" LIMIT 50');
     logMaps(`Bắt đầu xác thực danh bạ cho ${unverifiedLeads.length} leads đang chờ...`);
     
-    for (const lead of unverifiedLeads) {
-      // Check scheduler status before each verification
-      const checkStatus = await get('SELECT value FROM configs WHERE key = "scheduler_status"');
-      if (!checkStatus || checkStatus.value !== 'active') {
-        logMaps('Tiến trình tự động hóa cào Maps bị tạm dừng trong khi đang xác thực. Dừng xác thực.');
-        break;
+    let sharedBrowser = null;
+    try {
+      if (unverifiedLeads.length > 0) {
+        sharedBrowser = await puppeteer.launch({
+          headless: true,
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--disable-software-rasterizer',
+            '--disable-extensions',
+            '--no-first-run',
+            '--no-zygote',
+            '--js-flags="--max-old-space-size=128"'
+          ],
+        });
       }
 
-      try {
-        await verifyLead(lead.id);
-        await new Promise(r => setTimeout(r, 2000)); // 2 seconds delay for IP protection
-      } catch (err) {
-        logMaps(`Lỗi xác thực lead ID ${lead.id}: ${err.message}`);
+      for (const lead of unverifiedLeads) {
+        // Check scheduler status before each verification
+        const checkStatus = await get('SELECT value FROM configs WHERE key = "scheduler_status"');
+        if (!checkStatus || checkStatus.value !== 'active') {
+          logMaps('Tiến trình tự động hóa cào Maps bị tạm dừng trong khi đang xác thực. Dừng xác thực.');
+          break;
+        }
+
+        try {
+          await verifyLead(lead.id, logMaps, sharedBrowser);
+          await new Promise(r => setTimeout(r, 2000)); // 2 seconds delay for IP protection
+        } catch (err) {
+          logMaps(`Lỗi xác thực lead ID ${lead.id}: ${err.message}`);
+        }
+      }
+    } catch (launchErr) {
+      logMaps(`Lỗi khởi tạo trình duyệt dùng chung cho xác thực: ${launchErr.message}`);
+    } finally {
+      if (sharedBrowser) {
+        try {
+          await sharedBrowser.close();
+          logMaps('Đã đóng trình duyệt xác thực dùng chung.');
+        } catch (closeErr) {}
       }
     }
 
@@ -226,7 +256,12 @@ export async function runZaloCampaignWorker() {
           }
 
           try {
-            await sendZaloInvite(accountId, lead.id, logZalo);
+            await initZaloSession(accountId, logZalo, true);
+            try {
+              await sendZaloInvite(accountId, lead.id, logZalo);
+            } finally {
+              await closeZaloSession(accountId);
+            }
             
             // Nghỉ giải lao 5 phút (300 giây) nhưng kiểm tra mỗi giây để có thể ngắt ngay lập tức
             logZalo('Nghỉ giải lao 5 phút (300 giây) trước khi gửi tiếp theo...');
@@ -306,23 +341,32 @@ export function startScheduler() {
       
       for (const acc of connectedAccounts) {
         const accountId = acc.id;
-        const loggedIn = await isZaloLoggedIn(accountId);
-        if (!loggedIn) continue;
-
-        // Lấy lead được chăm sóc bởi tài khoản này
-        const contactedLeads = await all(
-          "SELECT id FROM leads WHERE zalo_status IN ('message_sent', 'friend_request_sent') AND assigned_zalo_account_id = ?",
-          [accountId]
-        );
-        
-        logMaps(`[Zalo ID ${accountId}] Tìm thấy ${contactedLeads.length} lead cần đồng bộ tin nhắn.`);
-        for (const lead of contactedLeads) {
-          try {
-            await syncZaloChat(accountId, lead.id, logMaps);
-            await new Promise(r => setTimeout(r, 3000)); // Delay 3 seconds between leads
-          } catch (err) {
-            logMaps(`Lỗi đồng bộ Zalo chat cho lead ID ${lead.id}: ${err.message}`);
+        try {
+          await initZaloSession(accountId, logMaps, true);
+          const loggedIn = await isZaloLoggedIn(accountId);
+          if (!loggedIn) {
+            await closeZaloSession(accountId);
+            continue;
           }
+
+          const contactedLeads = await all(
+            "SELECT id FROM leads WHERE zalo_status IN ('message_sent', 'friend_request_sent') AND assigned_zalo_account_id = ?",
+            [accountId]
+          );
+          
+          logMaps(`[Zalo ID ${accountId}] Tìm thấy ${contactedLeads.length} lead cần đồng bộ tin nhắn.`);
+          for (const lead of contactedLeads) {
+            try {
+              await syncZaloChat(accountId, lead.id, logMaps);
+              await new Promise(r => setTimeout(r, 3000)); // Delay 3 seconds between leads
+            } catch (err) {
+              logMaps(`Lỗi đồng bộ Zalo chat cho lead ID ${lead.id}: ${err.message}`);
+            }
+          }
+        } catch (err) {
+          logMaps(`Lỗi đồng bộ định kỳ tài khoản Zalo ID ${accountId}: ${err.message}`);
+        } finally {
+          await closeZaloSession(accountId);
         }
       }
       logMaps('--- HOÀN TẤT ĐỒNG BỘ TIN NHẮN ZALO ---');

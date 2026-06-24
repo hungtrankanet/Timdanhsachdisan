@@ -38,140 +38,183 @@ export function extractFacebookLinks(html) {
   return [...new Set(matches)];
 }
 
-export async function verifyLead(leadId, logCallback = log) {
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
-  });
-
-  const page = await browser.newPage();
-  await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-  await page.setViewport({ width: 1200, height: 800 });
-
+export async function verifyLead(leadId, logCallback = log, existingBrowser = null) {
   const lead = await get('SELECT * FROM leads WHERE id = ?', [leadId]);
 
   if (!lead) {
     logCallback(`Không tìm thấy lead ID: ${leadId}`);
-    await browser.close();
-    return;
+    return null;
   }
 
-  logCallback(`Đang xác thực thông tin cho: ${lead.brand_name}`);
-  let verifiedPhone = lead.phone || '';
-  let verifiedFb = lead.facebook || '';
-  let verifiedWeb = lead.website || '';
-  let notes = [];
-  let isWebValid = false;
-  let isFbValid = false;
+  let browser = existingBrowser;
+  let shouldCloseBrowser = false;
+  if (!browser) {
+    browser = await puppeteer.launch({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--disable-software-rasterizer',
+        '--disable-extensions',
+        '--no-first-run',
+        '--no-zygote',
+        '--js-flags="--max-old-space-size=128"'
+      ],
+    });
+    shouldCloseBrowser = true;
+  }
 
-  // 1. Verify Website
-  if (lead.website) {
-    logCallback(`Đang truy cập website: ${lead.website}`);
-    try {
-      await page.goto(lead.website, { waitUntil: 'networkidle2', timeout: 30000 });
-      isWebValid = true;
-      notes.push('Website hoạt động.');
+  let page = null;
+  let updatedLead = null;
+  try {
+    page = await browser.newPage();
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    await page.setViewport({ width: 1200, height: 800 });
 
-      const pageText = await page.evaluate(() => document.body.innerText);
-      const pageHtml = await page.evaluate(() => document.body.innerHTML);
+    // Chặn tải CSS, hình ảnh, media, font để tối ưu tốc độ và bộ nhớ
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      const type = req.resourceType();
+      if (['image', 'stylesheet', 'font', 'media'].includes(type)) {
+        req.abort();
+      } else {
+        req.continue();
+      }
+    });
 
-      const webPhones = extractPhones(pageText);
-      if (webPhones.length > 0) {
-        logCallback(`Tìm thấy SĐT trên website: ${webPhones.join(', ')}`);
-        const mapPhoneNorm = normalizePhone(lead.phone);
-        const matched = webPhones.some(wp => normalizePhone(wp) === mapPhoneNorm);
+    logCallback(`Đang xác thực thông tin cho: ${lead.brand_name}`);
+    let verifiedPhone = lead.phone || '';
+    let verifiedFb = lead.facebook || '';
+    let verifiedWeb = lead.website || '';
+    let notes = [];
+    let isWebValid = false;
+    let isFbValid = false;
+
+    // 1. Verify Website
+    if (lead.website) {
+      logCallback(`Đang truy cập website: ${lead.website}`);
+      try {
+        await page.goto(lead.website, { waitUntil: 'networkidle2', timeout: 30000 });
+        isWebValid = true;
+        notes.push('Website hoạt động.');
+
+        const pageText = await page.evaluate(() => document.body.innerText);
+        const pageHtml = await page.evaluate(() => document.body.innerHTML);
+
+        const webPhones = extractPhones(pageText);
+        if (webPhones.length > 0) {
+          logCallback(`Tìm thấy SĐT trên website: ${webPhones.join(', ')}`);
+          const mapPhoneNorm = normalizePhone(lead.phone);
+          const matched = webPhones.some(wp => normalizePhone(wp) === mapPhoneNorm);
+          
+          if (matched) {
+            notes.push('SĐT khớp trên website.');
+          } else {
+            notes.push(`Website có SĐT khác: ${webPhones.join(', ')}`);
+            if (!verifiedPhone) verifiedPhone = webPhones[0];
+          }
+        }
+
+        const fbLinks = extractFacebookLinks(pageHtml);
+        if (fbLinks.length > 0 && !verifiedFb) {
+          verifiedFb = fbLinks[0];
+          logCallback(`Trích xuất được link Facebook từ website: ${verifiedFb}`);
+          notes.push('Trích xuất được Facebook từ website.');
+        }
+      } catch (err) {
+        logCallback(`Không truy cập được website ${lead.website}: ${err.message}`);
+        notes.push(`Lỗi truy cập website: ${err.message}`);
+      }
+    }
+
+    // 2. Verify Facebook Fanpage
+    if (verifiedFb) {
+      logCallback(`Đang truy cập Facebook: ${verifiedFb}`);
+      try {
+        await page.goto(verifiedFb, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await new Promise(r => setTimeout(r, 3000));
         
-        if (matched) {
-          notes.push('SĐT khớp trên website.');
-        } else {
-          notes.push(`Website có SĐT khác: ${webPhones.join(', ')}`);
-          if (!verifiedPhone) verifiedPhone = webPhones[0];
+        isFbValid = true;
+        const pageText = await page.evaluate(() => document.body.innerText);
+
+        const fbPhones = extractPhones(pageText);
+        if (fbPhones.length > 0) {
+          logCallback(`Tìm thấy SĐT trên Facebook: ${fbPhones.join(', ')}`);
+          const mapPhoneNorm = normalizePhone(verifiedPhone);
+          const matched = fbPhones.some(fp => normalizePhone(fp) === mapPhoneNorm);
+
+          if (matched) {
+            notes.push('SĐT khớp trên Facebook.');
+          } else {
+            notes.push(`Facebook có SĐT khác: ${fbPhones.join(', ')}`);
+            if (!verifiedPhone) verifiedPhone = fbPhones[0];
+          }
         }
+      } catch (err) {
+        logCallback(`Không truy cập được trang Facebook: ${err.message}`);
+        notes.push(`Lỗi truy cập Facebook: ${err.message}`);
       }
-
-      const fbLinks = extractFacebookLinks(pageHtml);
-      if (fbLinks.length > 0 && !verifiedFb) {
-        verifiedFb = fbLinks[0];
-        logCallback(`Trích xuất được link Facebook từ website: ${verifiedFb}`);
-        notes.push('Trích xuất được Facebook từ website.');
-      }
-    } catch (err) {
-      logCallback(`Không truy cập được website ${lead.website}: ${err.message}`);
-      notes.push(`Lỗi truy cập website: ${err.message}`);
     }
-  }
 
-  // 2. Verify Facebook Fanpage
-  if (verifiedFb) {
-    logCallback(`Đang truy cập Facebook: ${verifiedFb}`);
-    try {
-      await page.goto(verifiedFb, { waitUntil: 'domcontentloaded', timeout: 30000 });
-      await new Promise(r => setTimeout(r, 3000));
-      
-      isFbValid = true;
-      const pageText = await page.evaluate(() => document.body.innerText);
-
-      const fbPhones = extractPhones(pageText);
-      if (fbPhones.length > 0) {
-        logCallback(`Tìm thấy SĐT trên Facebook: ${fbPhones.join(', ')}`);
-        const mapPhoneNorm = normalizePhone(verifiedPhone);
-        const matched = fbPhones.some(fp => normalizePhone(fp) === mapPhoneNorm);
-
-        if (matched) {
-          notes.push('SĐT khớp trên Facebook.');
-        } else {
-          notes.push(`Facebook có SĐT khác: ${fbPhones.join(', ')}`);
-          if (!verifiedPhone) verifiedPhone = fbPhones[0];
-        }
+    // Determine final verification status
+    let status = 'invalid';
+    if (isWebValid || isFbValid) {
+      const hasPhoneMatch = notes.some(n => n.includes('khớp'));
+      if (hasPhoneMatch) {
+        status = 'verified';
+      } else {
+        status = 'partially_verified';
       }
-    } catch (err) {
-      logCallback(`Không truy cập được trang Facebook: ${err.message}`);
-      notes.push(`Lỗi truy cập Facebook: ${err.message}`);
-    }
-  }
-
-  // Determine final verification status
-  let status = 'invalid';
-  if (isWebValid || isFbValid) {
-    const hasPhoneMatch = notes.some(n => n.includes('khớp'));
-    if (hasPhoneMatch) {
-      status = 'verified';
     } else {
-      status = 'partially_verified';
+      const noteContent = lead.verification_notes || '';
+      const scoreMatch = noteContent.match(/\[Điểm:\s*(\d+)\]/);
+      const score = scoreMatch ? parseInt(scoreMatch[1], 10) : 0;
+      
+      if (score > 3 && verifiedPhone && verifiedPhone.trim() !== '') {
+        status = 'partially_verified';
+        notes.push('Không có website/FB hoạt động nhưng là địa điểm tiềm năng cao (Điểm > 3) và có SĐT.');
+      }
     }
-  } else {
-    // If both web and FB are invalid/down, but the lead is highly relevant (score > 3) and has a phone, mark as partially_verified
-    const noteContent = lead.verification_notes || '';
-    const scoreMatch = noteContent.match(/\[Điểm:\s*(\d+)\]/);
-    const score = scoreMatch ? parseInt(scoreMatch[1], 10) : 0;
+
+    const notesStr = notes.join(' | ');
+    logCallback(`Xác thực hoàn tất. Trạng thái: ${status}. Ghi chú: ${notesStr}`);
+
+    // Update Database
+    await run(
+      `UPDATE leads 
+       SET phone = ?, facebook = ?, website = ?, verification_status = ?, verification_notes = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [verifiedPhone || lead.phone, verifiedFb || lead.facebook, verifiedWeb || lead.website, status, notesStr, leadId]
+    );
+
+    updatedLead = await get('SELECT * FROM leads WHERE id = ?', [leadId]);
     
-    if (score > 3 && verifiedPhone && verifiedPhone.trim() !== '') {
-      status = 'partially_verified';
-      notes.push('Không có website/FB hoạt động nhưng là địa điểm tiềm năng cao (Điểm > 3) và có SĐT.');
+    // Sync to Google Sheets
+    const sheetSynced = await syncLeadToSheet(updatedLead);
+    if (sheetSynced) {
+      await run(`UPDATE leads SET sheet_sync_status = 'synced' WHERE id = ?`, [leadId]);
+    } else {
+      await run(`UPDATE leads SET sheet_sync_status = 'failed' WHERE id = ?`, [leadId]);
+    }
+
+    updatedLead = await get('SELECT * FROM leads WHERE id = ?', [leadId]);
+
+  } catch (err) {
+    logCallback(`Lỗi tiến trình xác thực lead ID ${leadId}: ${err.message}`);
+  } finally {
+    if (page) {
+      try {
+        await page.close();
+      } catch (e) {}
+    }
+    if (shouldCloseBrowser && browser) {
+      try {
+        await browser.close();
+      } catch (e) {}
     }
   }
 
-  const notesStr = notes.join(' | ');
-  logCallback(`Xác thực hoàn tất. Trạng thái: ${status}. Ghi chú: ${notesStr}`);
-
-  // Update Database
-  await run(
-    `UPDATE leads 
-     SET phone = ?, facebook = ?, website = ?, verification_status = ?, verification_notes = ?, updated_at = CURRENT_TIMESTAMP
-     WHERE id = ?`,
-    [verifiedPhone || lead.phone, verifiedFb || lead.facebook, verifiedWeb || lead.website, status, notesStr, leadId]
-  );
-
-  const updatedLead = await get('SELECT * FROM leads WHERE id = ?', [leadId]);
-  
-  // Sync to Google Sheets
-  const sheetSynced = await syncLeadToSheet(updatedLead);
-  if (sheetSynced) {
-    await run(`UPDATE leads SET sheet_sync_status = 'synced' WHERE id = ?`, [leadId]);
-  } else {
-    await run(`UPDATE leads SET sheet_sync_status = 'failed' WHERE id = ?`, [leadId]);
-  }
-
-  await browser.close();
   return updatedLead;
 }
