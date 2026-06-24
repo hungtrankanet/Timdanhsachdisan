@@ -138,6 +138,10 @@ function setupEventListeners() {
   if (btnSaveEmail && typeof saveEmailConfig === 'function') {
     btnSaveEmail.addEventListener('click', saveEmailConfig);
   }
+  const btnSaveTiming = document.getElementById('btn-save-timing');
+  if (btnSaveTiming && typeof saveTimingConfig === 'function') {
+    btnSaveTiming.addEventListener('click', saveTimingConfig);
+  }
   
   const btnConnect = document.getElementById('btn-connect-zalo');
   if (btnConnect && typeof connectZalo === 'function') {

@@ -263,6 +263,24 @@
           <button id="btn-save-email" class="btn btn-secondary-outline" style="width: 100%; margin-top: 15px;">Lưu Cấu Hình Email</button>
         </div>
 
+        <!-- 2ca. WORKER TIMING SETTINGS (Admin-only) -->
+        <div class="glass-card panel-card admin-only-field" style="display: none;">
+          <h3>Giãn cách hoạt động (Tối ưu CPU)</h3>
+          <div class="form-group">
+            <label for="scraper-delay">Nghỉ sau mỗi lượt cào Maps (giây)</label>
+            <input type="number" id="scraper-delay" min="10" max="600" value="60">
+          </div>
+          <div class="form-group">
+            <label for="verifier-delay">Nghỉ sau mỗi đợt xác thực (giây)</label>
+            <input type="number" id="verifier-delay" min="10" max="600" value="30">
+          </div>
+          <div class="form-group">
+            <label for="verifier-spacing">Giãn cách giữa mỗi lead (giây)</label>
+            <input type="number" id="verifier-spacing" min="1" max="120" value="5">
+          </div>
+          <button id="btn-save-timing" class="btn btn-secondary-outline" style="width: 100%;">Lưu Cấu Hình Giãn Cách</button>
+        </div>
+
         <!-- 2d. LOCAL DATA SYNC (Admin-only) -->
         <div class="glass-card panel-card admin-only-field" style="display: none;">
           <h3>Đồng bộ dữ liệu từ localhost</h3>

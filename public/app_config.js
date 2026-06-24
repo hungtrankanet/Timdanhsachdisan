@@ -55,6 +55,18 @@ async function loadConfig() {
     if (dataEnabled.value) {
       document.getElementById('email-reporting-enabled').checked = (dataEnabled.value === 'true');
     }
+
+    const resScraperDelay = await fetch('/api/config/scraper_delay');
+    const dataScraperDelay = await resScraperDelay.json();
+    if (dataScraperDelay.value) document.getElementById('scraper-delay').value = dataScraperDelay.value;
+
+    const resVerifierDelay = await fetch('/api/config/verifier_delay');
+    const dataVerifierDelay = await resVerifierDelay.json();
+    if (dataVerifierDelay.value) document.getElementById('verifier-delay').value = dataVerifierDelay.value;
+
+    const resVerifierSpacing = await fetch('/api/config/verifier_spacing');
+    const dataVerifierSpacing = await resVerifierSpacing.json();
+    if (dataVerifierSpacing.value) document.getElementById('verifier-spacing').value = dataVerifierSpacing.value;
   } catch (err) {
     console.error(err);
   }
@@ -249,3 +261,47 @@ async function handleZaloSessionsUpload(e) {
     e.target.value = '';
   }
 }
+
+async function saveTimingConfig() {
+  const btn = document.getElementById('btn-save-timing');
+  if (!btn) return;
+  const originalText = btn.textContent;
+  btn.textContent = 'Đang lưu...';
+  btn.disabled = true;
+
+  const scraperDelay = document.getElementById('scraper-delay').value.trim();
+  const verifierDelay = document.getElementById('verifier-delay').value.trim();
+  const verifierSpacing = document.getElementById('verifier-spacing').value.trim();
+
+  try {
+    const configs = [
+      { key: 'scraper_delay', value: scraperDelay },
+      { key: 'verifier_delay', value: verifierDelay },
+      { key: 'verifier_spacing', value: verifierSpacing }
+    ];
+
+    let allOk = true;
+    for (const conf of configs) {
+      const res = await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(conf)
+      });
+      if (!res.ok) allOk = false;
+    }
+
+    if (allOk) {
+      appendConsole('Đã lưu cấu hình giãn cách hoạt động (Tối ưu CPU) thành công.', 'system');
+      showToast('Đã lưu cấu hình giãn cách hoạt động thành công!', 'success');
+      loadConfig();
+    } else {
+      showToast('Lỗi lưu cấu hình giãn cách!', 'error');
+    }
+  } catch (err) {
+    showToast(`Lỗi kết nối: ${err.message}`, 'error');
+  } finally {
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+}
+

@@ -128,8 +128,10 @@ export async function runScraperWorker() {
     isScraperWorkerRunning = false;
     const statusCheck = await get('SELECT value FROM configs WHERE key = "scheduler_status"');
     if (statusCheck && statusCheck.value === 'active') {
-      logMaps('[Scraper Worker] Lập lịch cào lại sau 60 giây...');
-      setTimeout(runScraperWorker, 60000);
+      const delayRow = await get('SELECT value FROM configs WHERE key = "scraper_delay"');
+      const scraperDelay = delayRow ? parseInt(delayRow.value, 10) * 1000 : 60000;
+      logMaps(`[Scraper Worker] Lập lịch cào lại sau ${scraperDelay / 1000} giây...`);
+      setTimeout(runScraperWorker, scraperDelay);
     } else {
       await closeScraperBrowser();
       await run('INSERT OR REPLACE INTO configs (key, value) VALUES (?, ?)', ['current_task', 'Tạm dừng (Idle)']);
@@ -194,7 +196,9 @@ export async function runVerifierWorker() {
 
       try {
         await verifyLead(lead.id, logMaps, verifierBrowser);
-        await new Promise(r => setTimeout(r, 2000));
+        const spacingRow = await get('SELECT value FROM configs WHERE key = "verifier_spacing"');
+        const verifierSpacing = spacingRow ? parseInt(spacingRow.value, 10) * 1000 : 5000;
+        await new Promise(r => setTimeout(r, verifierSpacing));
       } catch (err) {
         logMaps(`[Verifier Worker] Lỗi xác thực lead ID ${lead.id}: ${err.message}`);
       }
@@ -209,8 +213,10 @@ export async function runVerifierWorker() {
     isVerifierWorkerRunning = false;
     const statusCheck = await get('SELECT value FROM configs WHERE key = "scheduler_status"');
     if (statusCheck && statusCheck.value === 'active') {
-      logMaps('[Verifier Worker] Lập lịch xác thực lại sau 30 giây...');
-      setTimeout(runVerifierWorker, 30000);
+      const delayRow = await get('SELECT value FROM configs WHERE key = "verifier_delay"');
+      const verifierDelay = delayRow ? parseInt(delayRow.value, 10) * 1000 : 30000;
+      logMaps(`[Verifier Worker] Lập lịch xác thực lại sau ${verifierDelay / 1000} giây...`);
+      setTimeout(runVerifierWorker, verifierDelay);
     } else {
       await closeVerifierBrowser();
     }
