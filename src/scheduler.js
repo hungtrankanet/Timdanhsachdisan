@@ -93,6 +93,7 @@ export async function runQueueWorker() {
             '--disable-extensions',
             '--no-first-run',
             '--no-zygote',
+            '--disable-blink-features=AutomationControlled',
             '--js-flags="--max-old-space-size=128"'
           ],
         });

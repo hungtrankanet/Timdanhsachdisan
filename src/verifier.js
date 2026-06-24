@@ -38,6 +38,73 @@ export function extractFacebookLinks(html) {
   return [...new Set(matches)];
 }
 
+// Search core keywords on a Facebook page using Google Search Operators
+export async function searchFacebookKeywordOnGoogle(browser, fbUrl, logCallback = log) {
+  let pageHandle = '';
+  const cleanUrl = fbUrl.split('?')[0];
+  const handleMatch = cleanUrl.match(/facebook\.com\/([a-zA-Z0-9._-]+)/i);
+  
+  if (handleMatch) {
+    pageHandle = handleMatch[1];
+    if (['share', 'sharer', 'plugins', 'groups', 'pages'].includes(pageHandle.toLowerCase())) {
+      return false;
+    }
+  } else {
+    const idMatch = fbUrl.match(/[?&]id=(\d+)/i);
+    if (idMatch) {
+      pageHandle = idMatch[1];
+    }
+  }
+
+  if (!pageHandle) return false;
+
+  const targetKeywords = ['sơn mài', 'mỹ thuật', 'tranh thêu', 'gốm sứ', 'mỹ nghệ', 'khung tranh'];
+  const keywordsQuery = targetKeywords.map(k => `"${k}"`).join(' OR ');
+  const query = `site:facebook.com/${pageHandle} ${keywordsQuery}`;
+  const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+
+  logCallback(`[FB Keyword Search] Đang truy vấn Google: ${query}`);
+  
+  let page = null;
+  try {
+    page = await browser.newPage();
+    
+    // Inject stealth to bypass captcha
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => undefined,
+      });
+    });
+    
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
+    await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 20000 });
+    await new Promise(r => setTimeout(r, 2000 + Math.random() * 1000));
+
+    const pageText = await page.evaluate(() => document.body.innerText);
+
+    if (pageText.includes('did not match any documents') || 
+        pageText.includes('Không tìm thấy kết quả nào') || 
+        pageText.includes('không khớp với bất kỳ tài liệu nào')) {
+      return false;
+    }
+
+    const hasResults = await page.evaluate(() => {
+      return document.querySelectorAll('.g, #search a').length > 0;
+    });
+
+    return hasResults;
+  } catch (err) {
+    logCallback(`[FB Keyword Search] Gặp lỗi truy vấn Google: ${err.message}`);
+    return false;
+  } finally {
+    if (page) {
+      try {
+        await page.close();
+      } catch (_) {}
+    }
+  }
+}
+
 export async function verifyLead(leadId, logCallback = log, existingBrowser = null) {
   const lead = await get('SELECT * FROM leads WHERE id = ?', [leadId]);
 
@@ -60,6 +127,7 @@ export async function verifyLead(leadId, logCallback = log, existingBrowser = nu
         '--disable-extensions',
         '--no-first-run',
         '--no-zygote',
+        '--disable-blink-features=AutomationControlled',
         '--js-flags="--max-old-space-size=128"'
       ],
     });
@@ -151,6 +219,16 @@ export async function verifyLead(leadId, logCallback = log, existingBrowser = nu
             notes.push(`Facebook có SĐT khác: ${fbPhones.join(', ')}`);
             if (!verifiedPhone) verifiedPhone = fbPhones[0];
           }
+        }
+
+        // 2b. Search keywords on Facebook page via Google Search Operators
+        logCallback(`Đang tìm kiếm từ khóa di sản trên Facebook Fanpage qua Google Search...`);
+        const foundKeywords = await searchFacebookKeywordOnGoogle(browser, verifiedFb, logCallback);
+        if (foundKeywords) {
+          notes.push('Tìm thấy từ khóa di sản trên Fanpage Facebook.');
+          logCallback(`[FB Keyword Search] Đã xác nhận Fanpage chứa từ khóa liên quan đến di sản.`);
+        } else {
+          notes.push('Không phát hiện từ khóa di sản trên Fanpage Facebook.');
         }
       } catch (err) {
         logCallback(`Không truy cập được trang Facebook: ${err.message}`);
