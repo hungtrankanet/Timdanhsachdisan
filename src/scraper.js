@@ -38,6 +38,17 @@ export async function scrapeGoogleMaps(query, limit = 20, logCallback = log) {
   await page.setViewport({ width: 1200, height: 800 });
   await page.setExtraHTTPHeaders({ 'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7' });
 
+  // Tối ưu hóa: Chặn tải hình ảnh, font, media để tiết kiệm RAM/mạng
+  await page.setRequestInterception(true);
+  page.on('request', (req) => {
+    const type = req.resourceType();
+    if (['image', 'font', 'media'].includes(type)) {
+      req.abort();
+    } else {
+      req.continue();
+    }
+  });
+
   try {
     const searchUrl = `https://www.google.com/maps/search/${encodeURIComponent(query)}`;
     logCallback(`Đang mở trang tìm kiếm: ${searchUrl}`);
@@ -88,130 +99,143 @@ export async function scrapeGoogleMaps(query, limit = 20, logCallback = log) {
     logCallback(`Tìm thấy ${uniqueUrls.length} địa điểm duy nhất. Đang trích xuất chi tiết...`);
 
     const scrapedLeads = [];
-
-    for (let i = 0; i < uniqueUrls.length; i++) {
-      const url = uniqueUrls[i];
-      logCallback(`[${i + 1}/${uniqueUrls.length}] Đang xử lý: ${url}`);
-      
-      try {
-        const detailPage = await browser.newPage();
-        await detailPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    
+    let detailPage = null;
+    try {
+      if (uniqueUrls.length > 0) {
+        detailPage = await browser.newPage();
         
-        await detailPage.waitForSelector('h1', { timeout: 15000 });
-        
-        const details = await detailPage.evaluate(() => {
-          const nameEl = document.querySelector('h1');
-          const brand_name = nameEl ? nameEl.textContent.trim() : '';
-
-          const phoneEl = document.querySelector('[data-item-id^="phone:tel:"]');
-          let phone = phoneEl ? phoneEl.getAttribute('data-item-id').replace('phone:tel:', '').trim() : '';
-          
-          if (!phone) {
-            const els = Array.from(document.querySelectorAll('button[aria-label*="Điện thoại:"], button[aria-label*="Phone:"]'));
-            if (els.length > 0) {
-              phone = els[0].getAttribute('aria-label').replace(/Điện thoại:\s*/i, '').replace(/Phone:\s*/i, '').trim();
-            }
+        // Tối ưu hóa: Chặn tải các tài nguyên nặng trên tab chi tiết
+        await detailPage.setRequestInterception(true);
+        detailPage.on('request', (req) => {
+          const type = req.resourceType();
+          if (['image', 'font', 'media'].includes(type)) {
+            req.abort();
+          } else {
+            req.continue();
           }
-
-          const webEl = document.querySelector('[data-item-id="authority"]');
-          let website = webEl ? webEl.getAttribute('href') : '';
-          
-          if (!website) {
-            const els = Array.from(document.querySelectorAll('a[aria-label*="Website:"], a[aria-label*="Trang web:"]'));
-            if (els.length > 0) {
-              website = els[0].getAttribute('href');
-            }
-          }
-
-          const addrEl = document.querySelector('[data-item-id="address"]');
-          let address = addrEl ? addrEl.textContent.trim() : '';
-          
-          if (!address) {
-            const els = Array.from(document.querySelectorAll('button[aria-label*="Địa chỉ:"], button[aria-label*="Address:"]'));
-            if (els.length > 0) {
-              address = els[0].getAttribute('aria-label').replace(/Địa chỉ:\s*/i, '').replace(/Address:\s*/i, '').trim();
-            }
-          }
-
-          const categoryEl = document.querySelector('button[jsaction*="pane.rating.category"]') || 
-                             document.querySelector('[class*="fontBodyMedium"] button') ||
-                             document.querySelector('button[aria-label*="Category"]');
-          const category = categoryEl ? categoryEl.textContent.trim() : '';
-
-          return { brand_name, phone, website, address, category };
         });
-
-        const { ward, district, city } = parseAddress(details.address);
-        
-        // Kiểm tra độ phù hợp chuyên ngành di sản sơn mài trước khi lưu
-        const relResult = await checkRelevance(details.brand_name, details.address, details.category, details.website, logCallback);
-
-        const lead = {
-          brand_name: details.brand_name,
-          phone: details.phone,
-          website: details.website,
-          address: details.address,
-          ward,
-          district,
-          city,
-          verification_status: relResult.status,
-          verification_notes: `[Điểm: ${relResult.score}] ${relResult.reason}`,
-          zalo_status: 'pending'
-        };
-
-        logCallback(`Cào được: ${lead.brand_name} | SĐT: ${lead.phone || 'Không có'} | Web: ${lead.website || 'Không có'} | Danh mục: "${details.category || 'Không có'}" | Trạng thái: ${lead.verification_status} (Điểm: ${relResult.score})`);
-        
-        if (lead.brand_name) {
-          scrapedLeads.push(lead);
-          try {
-            // 1. Kiểm tra xem đã có bản ghi nào trùng cả thương hiệu và địa chỉ chưa
-            const existingSamePlace = await get(
-              "SELECT id, phone FROM leads WHERE brand_name = ? AND address = ?",
-              [lead.brand_name, lead.address || '']
-            );
-
-            if (existingSamePlace) {
-              const cleanPhone = lead.phone ? lead.phone.trim() : '';
-              const existingPhone = existingSamePlace.phone ? existingSamePlace.phone.trim() : '';
-
-              if (cleanPhone === existingPhone) {
-                logCallback(`Bản ghi "${lead.brand_name}" tại địa chỉ này với SĐT "${lead.phone}" đã tồn tại hoàn toàn. Bỏ qua.`);
-                await detailPage.close();
-                continue;
-              } else {
-                // Trùng thương hiệu & địa điểm nhưng khác số điện thoại
-                logCallback(`Phát hiện trùng thương hiệu "${lead.brand_name}" và địa điểm nhưng khác SĐT (Cũ: "${existingPhone}", Mới: "${cleanPhone}"). Tiến hành lưu thêm để xác thực.`);
-              }
-            }
-
-            // 2. Kiểm tra xem số điện thoại này đã tồn tại ở bất kỳ bản ghi nào chưa (vì phone là UNIQUE)
-            if (lead.phone) {
-              const existingWithPhone = await get("SELECT id FROM leads WHERE phone = ?", [lead.phone.trim()]);
-              if (existingWithPhone) {
-                logCallback(`Số điện thoại "${lead.phone}" đã tồn tại ở bản ghi khác trong cơ sở dữ liệu. Bỏ qua.`);
-                await detailPage.close();
-                continue;
-              }
-            }
-
-            // 3. Nếu chưa trùng hoàn toàn hoặc có số điện thoại mới, tiến hành lưu vào DB
-            await run(
-              `INSERT INTO leads (brand_name, phone, website, address, ward, district, city, verification_status, verification_notes, zalo_status) 
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-              [lead.brand_name, lead.phone || null, lead.website || null, lead.address || null, lead.ward || null, lead.district || null, lead.city || null, lead.verification_status, lead.verification_notes, 'pending']
-            );
-            logCallback(`Đã lưu "${lead.brand_name}" (SĐT: ${lead.phone || 'Không có'}, Trạng thái: ${lead.verification_status}) vào cơ sở dữ liệu.`);
-          } catch (dbErr) {
-            logCallback(`Lỗi DB khi lưu: ${dbErr.message}`);
-          }
-        }
-
-        await detailPage.close();
-      } catch (err) {
-        logCallback(`Lỗi trích xuất địa điểm từ ${url}: ${err.message}`);
       }
-      
-      await new Promise(r => setTimeout(r, 1000 + Math.random() * 2000));
+
+      for (let i = 0; i < uniqueUrls.length; i++) {
+        const url = uniqueUrls[i];
+        logCallback(`[${i + 1}/${uniqueUrls.length}] Đang xử lý: ${url}`);
+        
+        try {
+          await detailPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+          await detailPage.waitForSelector('h1', { timeout: 15000 });
+          
+          const details = await detailPage.evaluate(() => {
+            const nameEl = document.querySelector('h1');
+            const brand_name = nameEl ? nameEl.textContent.trim() : '';
+
+            const phoneEl = document.querySelector('[data-item-id^="phone:tel:"]');
+            let phone = phoneEl ? phoneEl.getAttribute('data-item-id').replace('phone:tel:', '').trim() : '';
+            
+            if (!phone) {
+              const els = Array.from(document.querySelectorAll('button[aria-label*="Điện thoại:"], button[aria-label*="Phone:"]'));
+              if (els.length > 0) {
+                phone = els[0].getAttribute('aria-label').replace(/Điện thoại:\s*/i, '').replace(/Phone:\s*/i, '').trim();
+              }
+            }
+
+            const webEl = document.querySelector('[data-item-id="authority"]');
+            let website = webEl ? webEl.getAttribute('href') : '';
+            
+            if (!website) {
+              const els = Array.from(document.querySelectorAll('a[aria-label*="Website:"], a[aria-label*="Trang web:"]'));
+              if (els.length > 0) {
+                website = els[0].getAttribute('href');
+              }
+            }
+
+            const addrEl = document.querySelector('[data-item-id="address"]');
+            let address = addrEl ? addrEl.textContent.trim() : '';
+            
+            if (!address) {
+              const els = Array.from(document.querySelectorAll('button[aria-label*="Địa chỉ:"], button[aria-label*="Address:"]'));
+              if (els.length > 0) {
+                address = els[0].getAttribute('aria-label').replace(/Địa chỉ:\s*/i, '').replace(/Address:\s*/i, '').trim();
+              }
+            }
+
+            const categoryEl = document.querySelector('button[jsaction*="pane.rating.category"]') || 
+                               document.querySelector('[class*="fontBodyMedium"] button') ||
+                               document.querySelector('button[aria-label*="Category"]');
+            const category = categoryEl ? categoryEl.textContent.trim() : '';
+
+            return { brand_name, phone, website, address, category };
+          });
+
+          const { ward, district, city } = parseAddress(details.address);
+          
+          const relResult = await checkRelevance(details.brand_name, details.address, details.category, details.website, logCallback);
+
+          const lead = {
+            brand_name: details.brand_name,
+            phone: details.phone,
+            website: details.website,
+            address: details.address,
+            ward,
+            district,
+            city,
+            verification_status: relResult.status,
+            verification_notes: `[Điểm: ${relResult.score}] ${relResult.reason}`,
+            zalo_status: 'pending'
+          };
+
+          logCallback(`Cào được: ${lead.brand_name} | SĐT: ${lead.phone || 'Không có'} | Web: ${lead.website || 'Không có'} | Danh mục: "${details.category || 'Không có'}" | Trạng thái: ${lead.verification_status} (Điểm: ${relResult.score})`);
+          
+          if (lead.brand_name) {
+            scrapedLeads.push(lead);
+            try {
+              const existingSamePlace = await get(
+                "SELECT id, phone FROM leads WHERE brand_name = ? AND address = ?",
+                [lead.brand_name, lead.address || '']
+              );
+
+              if (existingSamePlace) {
+                const cleanPhone = lead.phone ? lead.phone.trim() : '';
+                const existingPhone = existingSamePlace.phone ? existingSamePlace.phone.trim() : '';
+
+                if (cleanPhone === existingPhone) {
+                  logCallback(`Bản ghi "${lead.brand_name}" tại địa chỉ này với SĐT "${lead.phone}" đã tồn tại hoàn toàn. Bỏ qua.`);
+                  continue;
+                } else {
+                  logCallback(`Phát hiện trùng thương hiệu "${lead.brand_name}" và địa điểm nhưng khác SĐT (Cũ: "${existingPhone}", Mới: "${cleanPhone}"). Tiến hành lưu thêm để xác thực.`);
+                }
+              }
+
+              if (lead.phone) {
+                const existingWithPhone = await get("SELECT id FROM leads WHERE phone = ?", [lead.phone.trim()]);
+                if (existingWithPhone) {
+                  logCallback(`Số điện thoại "${lead.phone}" đã tồn tại ở bản ghi khác trong cơ sở dữ liệu. Bỏ qua.`);
+                  continue;
+                }
+              }
+
+              await run(
+                `INSERT INTO leads (brand_name, phone, website, address, ward, district, city, verification_status, verification_notes, zalo_status) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [lead.brand_name, lead.phone || null, lead.website || null, lead.address || null, lead.ward || null, lead.district || null, lead.city || null, lead.verification_status, lead.verification_notes, 'pending']
+              );
+              logCallback(`Đã lưu "${lead.brand_name}" (SĐT: ${lead.phone || 'Không có'}, Trạng thái: ${lead.verification_status}) vào cơ sở dữ liệu.`);
+            } catch (dbErr) {
+              logCallback(`Lỗi DB khi lưu: ${dbErr.message}`);
+            }
+          }
+        } catch (err) {
+          logCallback(`Lỗi trích xuất địa điểm từ ${url}: ${err.message}`);
+        }
+        
+        await new Promise(r => setTimeout(r, 1000 + Math.random() * 2000));
+      }
+    } finally {
+      if (detailPage) {
+        try {
+          await detailPage.close();
+        } catch (e) {}
+      }
     }
 
     logCallback(`Hoàn thành cào Google Maps. Đã thu thập ${scrapedLeads.length} địa điểm.`);
