@@ -425,7 +425,7 @@ export function evaluateRelevance(brandName, address, category, websiteUrl, webC
   }
 
   let status = 'rejected';
-  if (score > 3) {
+  if (score >= 3) {
     status = 'unverified';
   } else if (score > 0) {
     status = 'pending_review';

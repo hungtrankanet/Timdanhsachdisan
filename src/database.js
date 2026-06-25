@@ -242,12 +242,22 @@ export async function saveLeadWithDeduplication(lead, logCallback = console.log)
                ward = COALESCE(?, ward), 
                district = COALESCE(?, district), 
                city = COALESCE(?, city), 
-               verification_status = 'unverified', 
+               verification_status = ?, 
                verification_notes = COALESCE(?, verification_notes, 'Cập nhật SĐT từ trình cào'), 
                zalo_status = 'pending', 
                updated_at = CURRENT_TIMESTAMP
            WHERE id = ?`,
-          [normalizedPhone || null, lead.website || null, lead.facebook || null, lead.ward || null, lead.district || null, lead.city || null, lead.verification_notes || null, dupPlace.id]
+          [
+            normalizedPhone || null,
+            lead.website || null,
+            lead.facebook || null,
+            lead.ward || null,
+            lead.district || null,
+            lead.city || null,
+            lead.verification_status === 'rejected' ? 'rejected' : 'unverified',
+            lead.verification_notes || null,
+            dupPlace.id
+          ]
         );
         return { success: true, action: 'updated', id: dupPlace.id };
       } else {
@@ -259,8 +269,19 @@ export async function saveLeadWithDeduplication(lead, logCallback = console.log)
     // 3. New insert
     const res = await run(
       `INSERT INTO leads (brand_name, phone, website, facebook, address, ward, district, city, verification_status, verification_notes, zalo_status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'unverified', ?, 'pending')`,
-      [cleanBrand, normalizedPhone || null, lead.website || null, lead.facebook || null, cleanAddress || null, lead.ward || null, lead.district || null, lead.city || null, lead.verification_notes || null]
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+      [
+        cleanBrand,
+        normalizedPhone || null,
+        lead.website || null,
+        lead.facebook || null,
+        cleanAddress || null,
+        lead.ward || null,
+        lead.district || null,
+        lead.city || null,
+        lead.verification_status === 'rejected' ? 'rejected' : 'unverified',
+        lead.verification_notes || null
+      ]
     );
     return { success: true, action: 'inserted', id: res.id };
   } catch (err) {

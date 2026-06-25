@@ -208,8 +208,33 @@ app.get('/api/stats/progress', async (req, res) => {
 // 9e. API: Get crawler queue
 app.get('/api/queue', async (req, res) => {
   try {
-    const queue = await all('SELECT * FROM scheduler_queue ORDER BY id DESC LIMIT 100');
-    res.json(queue);
+    const queue = await all(`
+      SELECT * FROM scheduler_queue 
+      WHERE status != 'completed' 
+      ORDER BY CASE WHEN status = 'running' THEN 0 ELSE 1 END, id ASC 
+      LIMIT 10
+    `);
+    
+    const counts = await all("SELECT status, COUNT(*) as count FROM scheduler_queue GROUP BY status");
+    let pendingCount = 0;
+    let runningCount = 0;
+    let completedCount = 0;
+    for (const row of counts) {
+      if (row.status === 'pending') pendingCount = row.count;
+      else if (row.status === 'running') runningCount = row.count;
+      else if (row.status === 'completed') completedCount = row.count;
+    }
+    const totalCount = pendingCount + runningCount + completedCount;
+    const progress = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+
+    res.json({
+      tasks: queue,
+      pendingCount,
+      runningCount,
+      completedCount,
+      totalCount,
+      progress
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

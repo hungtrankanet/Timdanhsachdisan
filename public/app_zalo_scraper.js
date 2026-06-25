@@ -160,7 +160,29 @@ async function loadQueue() {
   try {
     const res = await fetch('/api/queue');
     if (!res.ok) throw new Error('Failed to fetch queue');
-    const queue = await res.json();
+    const data = await res.json();
+    
+    const queue = data.tasks || [];
+    const pendingCount = data.pendingCount || 0;
+    const progress = data.progress !== undefined ? data.progress : 0;
+    const totalCount = data.totalCount || 0;
+
+    // Update progress elements in UI
+    const progressContainer = document.getElementById('queue-progress-container');
+    const pendingCountEl = document.getElementById('queue-pending-count');
+    const progressBar = document.getElementById('queue-progress-bar');
+    const progressPercent = document.getElementById('queue-progress-percent');
+
+    if (progressContainer) {
+      if (totalCount > 0) {
+        progressContainer.style.display = 'inline-flex';
+        if (pendingCountEl) pendingCountEl.textContent = pendingCount;
+        if (progressBar) progressBar.style.width = `${progress}%`;
+        if (progressPercent) progressPercent.textContent = `${progress}%`;
+      } else {
+        progressContainer.style.display = 'none';
+      }
+    }
     
     const tbody = document.getElementById('queue-tbody');
     if (!tbody) return;

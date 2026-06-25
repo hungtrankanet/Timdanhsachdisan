@@ -145,8 +145,19 @@
 
         <!-- Card 2: Scraper Queue -->
         <div class="glass-card">
-          <div class="card-header">
-            <h2>Hàng đợi cào dữ liệu (Crawler Queue)</h2>
+          <div class="card-header" style="flex-wrap: wrap; gap: 15px;">
+            <div style="display: flex; flex-direction: column; gap: 5px;">
+              <h2>Hàng đợi cào dữ liệu (Crawler Queue)</h2>
+              <div id="queue-progress-container" style="display: none; align-items: center; gap: 10px; font-size: 12px; color: var(--text-muted);">
+                <span>Chờ xử lý: <strong id="queue-pending-count" style="color: var(--accent-gold);">0</strong></span>
+                <span style="color: rgba(255,255,255,0.15);">|</span>
+                <span>Tiến độ:</span>
+                <div class="progress-bar-bg" style="width: 120px; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden; position: relative;">
+                  <div id="queue-progress-bar" style="width: 0%; height: 100%; background: var(--accent-gold-g); transition: width 0.3s ease;"></div>
+                </div>
+                <span id="queue-progress-percent" style="font-weight: 600; color: var(--accent-gold);">0%</span>
+              </div>
+            </div>
             <div class="lead-actions" style="display: flex; gap: 8px; align-items: center;">
               <input type="text" id="queue-keyword" placeholder="Từ khóa (vd: sơn mài)" style="background: rgba(0,0,0,0.5); border: 1px solid var(--card-border); padding: 6px 10px; border-radius: 6px; color: #fff; font-size: 12px; width: 130px;">
               <input type="text" id="queue-location" placeholder="Địa điểm (vd: Quận 1, HCM)" style="background: rgba(0,0,0,0.5); border: 1px solid var(--card-border); padding: 6px 10px; border-radius: 6px; color: #fff; font-size: 12px; width: 140px;">

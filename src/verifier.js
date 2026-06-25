@@ -237,12 +237,17 @@ export async function verifyLead(leadId, logCallback = log, existingBrowser = nu
       }
     } else {
       const noteContent = lead.verification_notes || '';
-      const scoreMatch = noteContent.match(/\[Điểm:\s*(\d+)\]/);
+      const scoreMatch = noteContent.match(/\[Điểm:\s*(-?\d+)\]/);
       const score = scoreMatch ? parseInt(scoreMatch[1], 10) : 0;
+      const isManuallyApproved = noteContent.includes('phê duyệt thủ công') || noteContent.includes('phê duyệt hàng loạt');
       
-      if (score > 3 && verifiedPhone && verifiedPhone.trim() !== '') {
+      if ((score >= 3 || isManuallyApproved) && verifiedPhone && verifiedPhone.trim() !== '') {
         status = 'partially_verified';
-        notes.push('Không có website/FB hoạt động nhưng là địa điểm tiềm năng cao (Điểm > 3) và có SĐT.');
+        if (isManuallyApproved) {
+          notes.push('Được phê duyệt thủ công và có SĐT.');
+        } else {
+          notes.push('Không có website/FB hoạt động nhưng là địa điểm tiềm năng cao (Điểm >= 3) và có SĐT.');
+        }
       }
     }
 
