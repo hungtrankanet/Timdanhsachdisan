@@ -128,10 +128,22 @@ export async function runScraperWorker() {
     isScraperWorkerRunning = false;
     const statusCheck = await get('SELECT value FROM configs WHERE key = "scheduler_status"');
     if (statusCheck && statusCheck.value === 'active') {
-      const delayRow = await get('SELECT value FROM configs WHERE key = "scraper_delay"');
-      const scraperDelay = delayRow ? parseInt(delayRow.value, 10) * 1000 : 60000;
-      logMaps(`[Scraper Worker] Lập lịch cào lại sau ${scraperDelay / 1000} giây...`);
-      setTimeout(runScraperWorker, scraperDelay);
+      const nextJob = await get('SELECT id FROM scheduler_queue WHERE status = "pending" LIMIT 1');
+      if (nextJob) {
+        logMaps(`[Scraper Worker] Phát hiện còn tác vụ chờ. Lập lịch cào lại sau 3 giây...`);
+        setTimeout(runScraperWorker, 3000);
+      } else {
+        logMaps(`[Scraper Worker] Hàng đợi trống. Scraper dừng hoạt động.`);
+        await closeScraperBrowser();
+        
+        // Check if verifier is also done
+        const unverifiedCheck = await get('SELECT id FROM leads WHERE verification_status = "unverified" LIMIT 1');
+        if (!unverifiedCheck) {
+          logMaps(`[Scheduler] Cả Scraper và Verifier đều đã hoàn thành. Chuyển trạng thái sang Idle.`);
+          await run('INSERT OR REPLACE INTO configs (key, value) VALUES (?, ?)', ['scheduler_status', 'idle']);
+          await run('INSERT OR REPLACE INTO configs (key, value) VALUES (?, ?)', ['current_task', 'Tạm dừng (Idle)']);
+        }
+      }
     } else {
       await closeScraperBrowser();
       await run('INSERT OR REPLACE INTO configs (key, value) VALUES (?, ?)', ['current_task', 'Tạm dừng (Idle)']);
@@ -213,10 +225,24 @@ export async function runVerifierWorker() {
     isVerifierWorkerRunning = false;
     const statusCheck = await get('SELECT value FROM configs WHERE key = "scheduler_status"');
     if (statusCheck && statusCheck.value === 'active') {
-      const delayRow = await get('SELECT value FROM configs WHERE key = "verifier_delay"');
-      const verifierDelay = delayRow ? parseInt(delayRow.value, 10) * 1000 : 30000;
-      logMaps(`[Verifier Worker] Lập lịch xác thực lại sau ${verifierDelay / 1000} giây...`);
-      setTimeout(runVerifierWorker, verifierDelay);
+      const nextLead = await get('SELECT id FROM leads WHERE verification_status = "unverified" LIMIT 1');
+      if (nextLead) {
+        const delayRow = await get('SELECT value FROM configs WHERE key = "verifier_delay"');
+        const verifierDelay = delayRow ? parseInt(delayRow.value, 10) * 1000 : 30000;
+        logMaps(`[Verifier Worker] Lập lịch xác thực lại sau ${verifierDelay / 1000} giây...`);
+        setTimeout(runVerifierWorker, verifierDelay);
+      } else {
+        logMaps(`[Verifier Worker] Không còn lead cần xác thực. Verifier dừng hoạt động.`);
+        await closeVerifierBrowser();
+
+        // If scraper queue is also empty, set system to idle
+        const pendingJobCheck = await get('SELECT id FROM scheduler_queue WHERE status = "pending" LIMIT 1');
+        if (!pendingJobCheck) {
+          logMaps(`[Scheduler] Cả Scraper và Verifier đều đã hoàn thành. Chuyển trạng thái sang Idle.`);
+          await run('INSERT OR REPLACE INTO configs (key, value) VALUES (?, ?)', ['scheduler_status', 'idle']);
+          await run('INSERT OR REPLACE INTO configs (key, value) VALUES (?, ?)', ['current_task', 'Tạm dừng (Idle)']);
+        }
+      }
     } else {
       await closeVerifierBrowser();
     }
@@ -418,8 +444,36 @@ export async function startScheduler() {
       runZaloCampaignWorker();
     });
 
-  // Check queue status periodically every 5 minutes in case it was paused/resumed
+  // Check queue status periodically every 5 minutes, including daily auto-activation at or after 08:30 VN time
   setInterval(async () => {
+    // 1. Daily auto-activation check (at or after 08:30 AM VN time)
+    try {
+      const now = new Date();
+      const options = { timeZone: 'Asia/Ho_Chi_Minh', hour: 'numeric', minute: 'numeric', year: 'numeric', month: 'numeric', day: 'numeric', hour12: false };
+      const formatter = new Intl.DateTimeFormat('vi-VN', options);
+      const parts = formatter.formatToParts(now);
+      
+      const hour = parseInt(parts.find(p => p.type === 'hour').value, 10);
+      const minute = parseInt(parts.find(p => p.type === 'minute').value, 10);
+      const year = parts.find(p => p.type === 'year').value;
+      const month = parts.find(p => p.type === 'month').value;
+      const day = parts.find(p => p.type === 'day').value;
+      const todayStr = `${year}-${month}-${day}`; // e.g. "2026-6-25"
+
+      const lastActivationRow = await get('SELECT value FROM configs WHERE key = "last_daily_activation"');
+      const lastActivation = lastActivationRow ? lastActivationRow.value : '';
+
+      // Activate if it is a new day and time is >= 08:30 AM VN time
+      if (todayStr !== lastActivation && (hour > 8 || (hour === 8 && minute >= 30))) {
+        logMaps(`[Scheduler] Kích hoạt tự động hàng ngày (VN 08:30+). Ngày mới: ${todayStr}`);
+        await run('INSERT OR REPLACE INTO configs (key, value) VALUES (?, ?)', ['last_daily_activation', todayStr]);
+        await run('INSERT OR REPLACE INTO configs (key, value) VALUES (?, ?)', ['scheduler_status', 'active']);
+      }
+    } catch (err) {
+      logMaps(`[Scheduler Error] Lỗi kiểm tra kích hoạt tự động hàng ngày: ${err.message}`);
+    }
+
+    // 2. Start workers if active
     const statusRow = await get('SELECT value FROM configs WHERE key = "scheduler_status"');
     if (statusRow && statusRow.value === 'active') {
       if (!isScraperWorkerRunning) runScraperWorker();

@@ -116,6 +116,11 @@ app.post('/api/verify/:id', async (req, res) => {
 // 9b. API: Force scheduler execution (runScraperWorker & runVerifierWorker in parallel)
 app.post('/api/scheduler/force', async (req, res) => {
   log('Kích hoạt chạy luồng Worker thủ công...');
+  try {
+    await run('INSERT OR REPLACE INTO configs (key, value) VALUES (?, ?)', ['scheduler_status', 'active']);
+  } catch (err) {
+    log(`Lỗi khi cập nhật trạng thái tự động hóa: ${err.message}`);
+  }
   Promise.all([
     runScraperWorker(),
     runVerifierWorker()
