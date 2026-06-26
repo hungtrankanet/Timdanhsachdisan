@@ -325,6 +325,14 @@ function setupAiEventListeners() {
     });
   }
 
+  // Bottom save button — delegates to the top save button's handler
+  const btnSaveAllDraftsBottom = document.getElementById('btn-save-all-drafts-bottom');
+  if (btnSaveAllDraftsBottom && btnSaveAllDrafts) {
+    btnSaveAllDraftsBottom.addEventListener('click', () => {
+      btnSaveAllDrafts.click();
+    });
+  }
+
   // Add blank draft FAQ
   const btnAddDraftFaq = document.getElementById('btn-add-draft-faq');
   if (btnAddDraftFaq) {

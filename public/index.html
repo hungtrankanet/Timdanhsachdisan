@@ -369,7 +369,7 @@
             <textarea id="ai-extract-text" rows="6" placeholder="Ví dụ: Quy chế hội viên của dự án Trăm Năm Di Sản. Đối tượng tham gia gồm các nghệ nhân sơn mài, nhà điêu khắc... Quyền lợi: được đăng bài giới thiệu miễn phí..."></textarea>
           </div>
           <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px;">
-            <span style="font-size: 12px; color: var(--text-muted);">Hệ thống sử dụng AI của Groq (llama3-8b-8192) để trích xuất tự động thành danh sách Câu hỏi & Trả lời.</span>
+            <span style="font-size: 12px; color: var(--text-muted);">Hệ thống sử dụng Gemini AI (gemini-1.5-flash) để trích xuất tự động thành danh sách Câu hỏi &amp; Trả lời.</span>
             <button id="btn-extract-faq" class="btn btn-secondary">Bắt đầu trích xuất</button>
           </div>
         </div>
@@ -418,6 +418,14 @@
           
           <div id="draft-faq-list" style="display: flex; flex-direction: column; gap: 15px; max-height: 500px; overflow-y: auto; padding-right: 5px;">
             <!-- Extracted FAQs will be loaded dynamically here -->
+          </div>
+
+          <!-- Save button at the bottom of the draft list -->
+          <div style="display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 20px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.08);">
+            <span style="font-size: 12px; color: var(--text-muted);">Đã kiểm tra xong? Lưu toàn bộ vào hệ thống.</span>
+            <button id="btn-save-all-drafts-bottom" class="btn btn-secondary" style="padding: 10px 24px; font-weight: 700; letter-spacing: 0.5px;">
+              💾 Lưu toàn bộ vào hệ thống
+            </button>
           </div>
         </div>
 
