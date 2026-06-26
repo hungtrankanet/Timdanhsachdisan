@@ -44,6 +44,7 @@
       <div class="header-tabs">
         <button id="btn-tab-dashboard" class="tab-btn active">Bảng điều khiển</button>
         <button id="btn-tab-inbox" class="tab-btn">Hộp thư Zalo</button>
+        <button id="btn-tab-ai" class="tab-btn admin-only-field" style="display: none;">Cấu hình AI Agent</button>
       </div>
       <div class="header-actions">
         <span id="zalo-status-badge" class="badge badge-error">Zalo: 0 hoạt động</span>
@@ -352,6 +353,143 @@
       </div>
     </div>
   </div>
+
+  <!-- AI Agent Configuration Tab View -->
+  <div id="view-ai" class="tab-view">
+    <div class="grid-layout">
+      <!-- MAIN CONTENT: FAQ CRUD & Extraction -->
+      <main class="main-content">
+        <!-- 1. AI FAQ Extraction -->
+        <div class="glass-card" style="margin-bottom: 25px;">
+          <div class="card-header">
+            <h2>Trích xuất tài liệu tri thức tự động</h2>
+          </div>
+          <div class="form-group">
+            <label for="ai-extract-text">Dán nội dung tài liệu thô hoặc thông tin giới thiệu dự án (Rich Text / Markdown)</label>
+            <textarea id="ai-extract-text" rows="6" placeholder="Ví dụ: Quy chế hội viên của dự án Trăm Năm Di Sản. Đối tượng tham gia gồm các nghệ nhân sơn mài, nhà điêu khắc... Quyền lợi: được đăng bài giới thiệu miễn phí..."></textarea>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+            <span style="font-size: 12px; color: var(--text-muted);">Hệ thống sử dụng AI của Groq (llama3-8b-8192) để trích xuất tự động thành danh sách Câu hỏi & Trả lời.</span>
+            <button id="btn-extract-faq" class="btn btn-secondary">Bắt đầu trích xuất</button>
+          </div>
+        </div>
+
+        <!-- 2. FAQ CRUD Management -->
+        <div class="glass-card" style="margin-bottom: 25px;">
+          <div class="card-header" style="justify-content: space-between; align-items: center; gap: 15px; flex-wrap: wrap;">
+            <h2 id="faq-header-title">Cơ sở tri thức FAQ</h2>
+            <div style="display: flex; gap: 10px;">
+              <button id="btn-add-faq-manual" class="btn btn-secondary-outline btn-sm">+ Thêm câu hỏi/đáp</button>
+              <button id="btn-clear-all-faq" class="btn btn-primary btn-sm" style="background: var(--accent-red); border-color: var(--accent-red);">Xóa toàn bộ tri thức</button>
+            </div>
+          </div>
+          
+          <!-- Add/Edit FAQ Form (Hidden by default) -->
+          <div id="faq-form-container" class="glass-card" style="display: none; margin-bottom: 20px; border-color: var(--accent-gold); background: rgba(0,0,0,0.6);">
+            <h4 id="faq-form-title" style="color: var(--accent-gold); margin-bottom: 12px; font-weight: 600;">Thêm câu hỏi đáp mới</h4>
+            <input type="hidden" id="faq-edit-id" value="">
+            <div class="form-group">
+              <label for="faq-question">Câu hỏi (Question)</label>
+              <input type="text" id="faq-question" placeholder="Ví dụ: Quyền lợi khi tham gia dự án là gì?">
+            </div>
+            <div class="form-group">
+              <label for="faq-answer">Câu trả lời (Answer)</label>
+              <textarea id="faq-answer" rows="3" placeholder="Ví dụ: Nghệ nhân được hỗ trợ truyền thông viết bài miễn phí và đăng tác phẩm bình chọn..."></textarea>
+            </div>
+            <div style="display: flex; gap: 10px; justify-content: flex-end;">
+              <button id="btn-cancel-faq" class="btn btn-primary-outline btn-sm">Hủy</button>
+              <button id="btn-save-faq" class="btn btn-secondary btn-sm">Lưu tri thức</button>
+            </div>
+          </div>
+
+          <div class="table-wrapper" style="max-height: 400px; overflow-y: auto;">
+            <table id="faq-table">
+              <thead>
+                <tr>
+                  <th style="width: 30%;">Câu hỏi</th>
+                  <th style="width: 55%;">Câu trả lời</th>
+                  <th style="text-align: right; width: 15%;">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody id="faq-tbody">
+                <tr>
+                  <td colspan="3" class="loading-cell">Đang tải cơ sở tri thức...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 3. Lead Transfer Logs -->
+        <div class="glass-card">
+          <div class="card-header">
+            <h2>Nhật ký chuyển giao khách hàng ngày thứ 5</h2>
+          </div>
+          <div class="table-wrapper" style="max-height: 350px; overflow-y: auto;">
+            <table id="transfer-logs-table">
+              <thead>
+                <tr>
+                  <th>Tên thương hiệu</th>
+                  <th>Số điện thoại</th>
+                  <th>Từ tài khoản</th>
+                  <th>Đến tài khoản</th>
+                  <th>Lý do</th>
+                  <th>Thời gian</th>
+                </tr>
+              </thead>
+              <tbody id="transfer-logs-tbody">
+                <tr>
+                  <td colspan="6" class="loading-cell">Đang tải nhật ký chuyển giao...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </main>
+
+      <!-- SIDEBAR PANEL: Config options -->
+      <aside class="sidebar">
+        <div class="glass-card panel-card">
+          <h3>Cấu hình AI Agent</h3>
+          <div class="form-group" style="display: flex; align-items: center; gap: 10px; margin-top: 10px; margin-bottom: 15px;">
+            <input type="checkbox" id="chatbot-enabled" style="width: auto;">
+            <label for="chatbot-enabled" style="margin-bottom: 0; cursor: pointer; font-weight: 600;">Kích hoạt AI tự động trả lời</label>
+          </div>
+          <div class="form-group">
+            <label for="groq-api-key">Groq API Key</label>
+            <input type="password" id="groq-api-key" placeholder="Nhập gsk_...">
+          </div>
+          <div class="form-group">
+            <label for="chatbot-keywords">Từ khóa nhận diện trong luồng</label>
+            <input type="text" id="chatbot-keywords" placeholder="sơn mài, di sản, triển lãm...">
+            <span style="font-size: 11px; color: var(--text-muted);">Cách nhau bởi dấu phẩy. Nếu chứa từ khóa này bot sẽ dùng AI để trả lời.</span>
+          </div>
+          <div class="form-group">
+            <label for="chatbot-canned-replies">Câu trả lời mẫu ngoài luồng (JSON Array)</label>
+            <textarea id="chatbot-canned-replies" rows="4" style="font-family: monospace; font-size: 12px;" placeholder='["Câu trả lời 1", "Câu trả lời 2"]'></textarea>
+            <span style="font-size: 11px; color: var(--text-muted);">Dùng khi khách hỏi các câu hỏi ngoài luồng (tiết kiệm Token).</span>
+          </div>
+          <button id="btn-save-ai-agent-config" class="btn btn-secondary" style="width: 100%;">Lưu cấu hình AI</button>
+        </div>
+
+        <div class="glass-card panel-card">
+          <h3>Kịch bản chăm sóc (Follow-up 1-3-5)</h3>
+          <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 15px;">
+            Hệ thống tự động gửi tin nhắn nhắc nhở khi khách hàng không phản hồi tin nhắn kết bạn.
+          </p>
+          <div class="form-group">
+            <label for="followup-day1-template">Tin nhắn Ngày 1 (Sau 24 giờ)</label>
+            <textarea id="followup-day1-template" rows="3" placeholder="Nhập tin nhắn gửi sau 24h..."></textarea>
+          </div>
+          <div class="form-group">
+            <label for="followup-day3-template">Tin nhắn Ngày 3 (Sau 48 giờ tiếp theo)</label>
+            <textarea id="followup-day3-template" rows="3" placeholder="Nhập tin nhắn gửi sau 3 ngày..."></textarea>
+          </div>
+          <button id="btn-save-followup-config" class="btn btn-secondary" style="width: 100%;">Lưu tin nhắn chăm sóc</button>
+        </div>
+      </aside>
+    </div>
+  </div>
   </div>
 
   <!-- Zalo Connection QR Modal -->
@@ -487,6 +625,7 @@
   <script src="app_leads.js" defer></script>
   <script src="app_staff_pending.js" defer></script>
   <script src="app_zalo_scraper.js" defer></script>
+  <script src="app_ai.js" defer></script>
   <script src="app_init.js" defer></script>
   <script src="accounts.js" defer></script>
   <script src="inbox.js" defer></script>

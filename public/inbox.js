@@ -13,14 +13,18 @@ document.addEventListener('DOMContentLoaded', () => {
 function setupInboxTabs() {
   const btnDashboard = document.getElementById('btn-tab-dashboard');
   const btnInbox = document.getElementById('btn-tab-inbox');
+  const btnAi = document.getElementById('btn-tab-ai');
   const viewDashboard = document.getElementById('view-dashboard');
   const viewInbox = document.getElementById('view-inbox');
+  const viewAi = document.getElementById('view-ai');
 
   btnDashboard.addEventListener('click', () => {
     btnDashboard.classList.add('active');
     btnInbox.classList.remove('active');
+    if (btnAi) btnAi.classList.remove('active');
     viewDashboard.classList.add('active-view');
     viewInbox.classList.remove('active-view');
+    if (viewAi) viewAi.classList.remove('active-view');
     
     // Stop polling inbox
     if (inboxInterval) {
@@ -32,8 +36,10 @@ function setupInboxTabs() {
   btnInbox.addEventListener('click', () => {
     btnInbox.classList.add('active');
     btnDashboard.classList.remove('active');
+    if (btnAi) btnAi.classList.remove('active');
     viewInbox.classList.add('active-view');
     viewDashboard.classList.remove('active-view');
+    if (viewAi) viewAi.classList.remove('active-view');
     
     // Start loading chats
     loadChats();
@@ -46,6 +52,28 @@ function setupInboxTabs() {
       }
     }, 10000);
   });
+
+  if (btnAi) {
+    btnAi.addEventListener('click', () => {
+      btnAi.classList.add('active');
+      btnDashboard.classList.remove('active');
+      btnInbox.classList.remove('active');
+      viewAi.classList.add('active-view');
+      viewDashboard.classList.remove('active-view');
+      viewInbox.classList.remove('active-view');
+      
+      // Stop polling inbox
+      if (inboxInterval) {
+        clearInterval(inboxInterval);
+        inboxInterval = null;
+      }
+
+      // Load AI Agent data
+      if (typeof loadAiAgentConfig === 'function') loadAiAgentConfig();
+      if (typeof loadFAQs === 'function') loadFAQs();
+      if (typeof loadTransferLogs === 'function') loadTransferLogs();
+    });
+  }
 }
 
 // Event Listeners for Inbox

@@ -461,6 +461,224 @@ app.post('/api/admin/upload-zalo-sessions', express.raw({ type: 'application/oct
 });
 
 
+// --- AI Chatbot & FAQ API Routes ---
+
+// Get AI Config
+app.get('/api/ai/config', async (req, res) => {
+  try {
+    const keys = ['groq_api_key', 'chatbot_enabled', 'chatbot_inscope_keywords', 'chatbot_canned_replies', 'zalo_day1_template', 'zalo_day3_template'];
+    const placeholders = keys.map(() => '?').join(',');
+    const rows = await all(`SELECT key, value FROM configs WHERE key IN (${placeholders})`, keys);
+    const config = {
+      groq_api_key: '',
+      chatbot_enabled: 'false',
+      chatbot_inscope_keywords: '',
+      chatbot_canned_replies: '[]',
+      zalo_day1_template: '',
+      zalo_day3_template: ''
+    };
+    
+    for (const row of rows) {
+      config[row.key] = row.value;
+    }
+    res.json(config);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update AI Config
+app.post('/api/ai/config', async (req, res) => {
+  const { groq_api_key, chatbot_enabled, chatbot_inscope_keywords, chatbot_canned_replies, zalo_day1_template, zalo_day3_template } = req.body;
+  try {
+    const updates = [
+      { key: 'groq_api_key', value: groq_api_key },
+      { key: 'chatbot_enabled', value: chatbot_enabled },
+      { key: 'chatbot_inscope_keywords', value: chatbot_inscope_keywords },
+      { key: 'chatbot_canned_replies', value: chatbot_canned_replies },
+      { key: 'zalo_day1_template', value: zalo_day1_template },
+      { key: 'zalo_day3_template', value: zalo_day3_template }
+    ];
+    
+    await run('BEGIN TRANSACTION');
+    for (const u of updates) {
+      if (u.value !== undefined) {
+        await run('INSERT OR REPLACE INTO configs (key, value) VALUES (?, ?)', [u.key, String(u.value)]);
+      }
+    }
+    await run('COMMIT');
+    res.json({ success: true });
+  } catch (err) {
+    try { await run('ROLLBACK'); } catch (_) {}
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get all FAQs
+app.get('/api/ai/faq', async (req, res) => {
+  try {
+    const faqs = await all('SELECT * FROM knowledge_base ORDER BY id DESC');
+    res.json(faqs);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Add single FAQ
+app.post('/api/ai/faq', async (req, res) => {
+  const { question, answer } = req.body;
+  if (!question || !answer) {
+    return res.status(400).json({ error: 'Thiếu câu hỏi hoặc câu trả lời.' });
+  }
+  try {
+    const result = await run('INSERT INTO knowledge_base (question, answer) VALUES (?, ?)', [question.trim(), answer.trim()]);
+    res.json({ success: true, id: result.id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update FAQ
+app.put('/api/ai/faq/:id', async (req, res) => {
+  const { id } = req.params;
+  const { question, answer } = req.body;
+  if (!question || !answer) {
+    return res.status(400).json({ error: 'Thiếu câu hỏi hoặc câu trả lời.' });
+  }
+  try {
+    await run('UPDATE knowledge_base SET question = ?, answer = ? WHERE id = ?', [question.trim(), answer.trim(), id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete FAQ
+app.delete('/api/ai/faq/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    await run('DELETE FROM knowledge_base WHERE id = ?', [id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Clear all FAQs
+app.delete('/api/ai/faq', async (req, res) => {
+  try {
+    await run('DELETE FROM knowledge_base');
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// AI FAQ Extraction
+app.post('/api/ai/extract-faq', async (req, res) => {
+  const { text } = req.body;
+  if (!text || text.trim() === '') {
+    return res.status(400).json({ error: 'Nội dung văn bản trống.' });
+  }
+
+  try {
+    const groqKeyRow = await get("SELECT value FROM configs WHERE key = 'groq_api_key'");
+    const groqApiKey = groqKeyRow ? groqKeyRow.value : '';
+    if (!groqApiKey) {
+      return res.status(400).json({ error: 'Chưa cấu hình Groq API Key.' });
+    }
+
+    const systemPrompt = `Bạn là một trợ lý AI chuyên nghiệp phân tích văn bản. 
+Nhiệm vụ của bạn là đọc kỹ đoạn tài liệu thô do người dùng cung cấp và trích xuất thành danh sách các cặp Câu hỏi (question) và Câu trả lời (answer) tương ứng (FAQ).
+Trả về kết quả duy nhất dưới dạng JSON array có cấu trúc chính xác như sau:
+[
+  {
+    "question": "Câu hỏi trích xuất được hoặc được tổng hợp lại từ tài liệu...",
+    "answer": "Câu trả lời tương ứng lấy từ thông tin trong tài liệu..."
+  }
+]
+Không viết bất kỳ lời dẫn giải nào, không định dạng markdown \`\`\`json ở đầu và cuối, chỉ trả về chuỗi JSON array hợp lệ.`;
+
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${groqApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'llama3-8b-8192',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: text }
+        ],
+        temperature: 0.1
+      })
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(500).json({ error: `Groq API returned HTTP ${response.status}: ${errText}` });
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content?.trim();
+    if (!content) {
+      return res.status(500).json({ error: 'Groq API không trả về nội dung.' });
+    }
+
+    let cleanJson = content;
+    if (cleanJson.startsWith('```')) {
+      cleanJson = cleanJson.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+    }
+    cleanJson = cleanJson.trim();
+
+    let faqList;
+    try {
+      faqList = JSON.parse(cleanJson);
+    } catch (e) {
+      console.error('Failed to parse JSON from Groq:', cleanJson);
+      return res.status(500).json({ error: 'Không thể parse JSON từ phản hồi của Groq. Vui lòng thử lại.', raw: content });
+    }
+
+    if (!Array.isArray(faqList)) {
+      return res.status(500).json({ error: 'Groq không trả về một array JSON hợp lệ.' });
+    }
+
+    await run('BEGIN TRANSACTION');
+    for (const faq of faqList) {
+      if (faq.question && faq.answer) {
+        await run('INSERT INTO knowledge_base (question, answer) VALUES (?, ?)', [faq.question.trim(), faq.answer.trim()]);
+      }
+    }
+    await run('COMMIT');
+
+    res.json({ success: true, count: faqList.length, faqs: faqList });
+  } catch (err) {
+    try { await run('ROLLBACK'); } catch (_) {}
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get lead transfer logs
+app.get('/api/ai/transfer-logs', async (req, res) => {
+  try {
+    const logs = await all(`
+      SELECT t.*, l.brand_name, l.phone, 
+             a1.custom_name as from_account_name, a1.display_name as from_account_display,
+             a2.custom_name as to_account_name, a2.display_name as to_account_display
+      FROM lead_transfer_logs t
+      LEFT JOIN leads l ON t.lead_id = l.id
+      LEFT JOIN zalo_accounts a1 ON t.from_account_id = a1.id
+      LEFT JOIN zalo_accounts a2 ON t.to_account_id = a2.id
+      ORDER BY t.id DESC
+    `);
+    res.json(logs);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 // 10. SSE: Log stream for dashboard
 app.get('/api/logs', (req, res) => {
   res.writeHead(200, {

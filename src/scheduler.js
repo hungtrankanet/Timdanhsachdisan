@@ -2,7 +2,7 @@ import puppeteer from 'puppeteer';
 import { get, run, all } from './database.js';
 import { scrapeGoogleMaps } from './scraper.js';
 import { verifyLead } from './verifier.js';
-import { sendZaloInvite, isZaloLoggedIn, syncZaloChat, initZaloSession, closeZaloSession } from './zalo.js';
+import { sendZaloInvite, isZaloLoggedIn, syncZaloChat, initZaloSession, closeZaloSession, sendZaloMessageDirect } from './zalo.js';
 import { log, logMaps, logZalo } from './logger.js';
 
 let scraperBrowser = null;
@@ -255,6 +255,178 @@ export async function runQueueWorker() {
 }
 
 
+export async function runFollowUpCampaignWorker(logCallback = logZalo) {
+  logCallback('--- KHỞI ĐỘNG HỆ THỐNG KIỂM TRA CHĂM SÓC FOLLOW-UP (1-3-5) ---');
+  try {
+    const day1TemplateRow = await get("SELECT value FROM configs WHERE key = 'zalo_day1_template'");
+    const day3TemplateRow = await get("SELECT value FROM configs WHERE key = 'zalo_day3_template'");
+    const day1Template = day1TemplateRow ? day1TemplateRow.value : '';
+    const day3Template = day3TemplateRow ? day3TemplateRow.value : '';
+
+    const leads = await all(`
+      SELECT id, brand_name, phone, city, assigned_zalo_account_id, zalo_followup_stage, last_followup_at, transfer_count 
+      FROM leads 
+      WHERE zalo_status IN ('message_sent', 'friend_request_sent')
+        AND zalo_followup_stage IN (0, 1, 2)
+    `);
+
+    logCallback(`[Follow-up] Tìm thấy ${leads.length} leads trong luồng follow-up.`);
+
+    const now = new Date();
+    const leadsByAccount = {};
+    const transfers = [];
+
+    for (const lead of leads) {
+      const lastFollowUp = new Date(lead.last_followup_at);
+      const diffMs = now - lastFollowUp;
+      const diffHours = diffMs / (1000 * 60 * 60);
+
+      if (lead.zalo_followup_stage === 0 && diffHours >= 24) {
+        if (lead.assigned_zalo_account_id) {
+          if (!leadsByAccount[lead.assigned_zalo_account_id]) {
+            leadsByAccount[lead.assigned_zalo_account_id] = [];
+          }
+          leadsByAccount[lead.assigned_zalo_account_id].push({ lead, stage: 1, template: day1Template });
+        }
+      } else if (lead.zalo_followup_stage === 1 && diffHours >= 48) {
+        if (lead.assigned_zalo_account_id) {
+          if (!leadsByAccount[lead.assigned_zalo_account_id]) {
+            leadsByAccount[lead.assigned_zalo_account_id] = [];
+          }
+          leadsByAccount[lead.assigned_zalo_account_id].push({ lead, stage: 2, template: day3Template });
+        }
+      } else if (lead.zalo_followup_stage === 2 && diffHours >= 48) {
+        transfers.push(lead);
+      }
+    }
+
+    // Xử lý chuyển giao ngày thứ 5 (database-only)
+    for (const lead of transfers) {
+      logCallback(`[Follow-up] Lead "${lead.brand_name}" (${lead.phone}) quá 5 ngày không phản hồi. Tiến hành chuyển giao...`);
+      
+      const allConnectedAccounts = await all("SELECT id, assigned_regions FROM zalo_accounts WHERE status = 'connected' AND id != ?", [lead.assigned_zalo_account_id]);
+      
+      if (allConnectedAccounts.length === 0) {
+        logCallback(`[Follow-up] Không tìm thấy tài khoản Zalo connected khác để chuyển giao lead ID ${lead.id}.`);
+        continue;
+      }
+
+      // Ưu tiên tài khoản Zalo cùng khu vực địa lý của lead
+      const candidateAccounts = [];
+      if (lead.city) {
+        for (const acc of allConnectedAccounts) {
+          if (acc.assigned_regions) {
+            const regions = acc.assigned_regions.split(',').map(r => r.trim().toLowerCase()).filter(Boolean);
+            if (regions.some(r => lead.city.toLowerCase().includes(r))) {
+              candidateAccounts.push(acc);
+            }
+          }
+        }
+      }
+
+      const targetAccounts = candidateAccounts.length > 0 ? candidateAccounts : allConnectedAccounts;
+      
+      // Load balancing: chọn tài khoản đang giữ ít lead nhất
+      let bestAccount = null;
+      let minLeads = Infinity;
+      for (const acc of targetAccounts) {
+        const countRow = await get("SELECT COUNT(*) as count FROM leads WHERE assigned_zalo_account_id = ?", [acc.id]);
+        const count = countRow ? countRow.count : 0;
+        if (count < minLeads) {
+          minLeads = count;
+          bestAccount = acc;
+        }
+      }
+
+      if (bestAccount) {
+        const newAccountId = bestAccount.id;
+        const newCount = (lead.transfer_count || 0) + 1;
+        
+        await run(`
+          UPDATE leads 
+          SET assigned_zalo_account_id = ?, 
+              zalo_status = 'pending', 
+              zalo_followup_stage = 0, 
+              last_followup_at = CURRENT_TIMESTAMP, 
+              transfer_count = ?, 
+              zalo_notes = ?,
+              updated_at = CURRENT_TIMESTAMP 
+          WHERE id = ?
+        `, [newAccountId, newCount, `Chuyển giao lần ${newCount} từ tài khoản #${lead.assigned_zalo_account_id} sang #${newAccountId}`, lead.id]);
+
+        await run(`
+          INSERT INTO lead_transfer_logs (lead_id, from_account_id, to_account_id, reason) 
+          VALUES (?, ?, ?, ?)
+        `, [lead.id, lead.assigned_zalo_account_id, newAccountId, `Quá 5 ngày không phản hồi (Chuyển giao lần ${newCount})`]);
+
+        logCallback(`[Follow-up] Đã chuyển lead "${lead.brand_name}" sang Zalo ID ${newAccountId}. Ghi log thành công.`);
+      }
+    }
+
+    // Xử lý gửi tin nhắn follow-up Ngày 1 & Ngày 3
+    const accountIds = Object.keys(leadsByAccount);
+    for (const accIdStr of accountIds) {
+      const accountId = parseInt(accIdStr, 10);
+      const items = leadsByAccount[accountId];
+      
+      if (!isWithinWorkingHours()) {
+        logCallback(`[Follow-up] Ngoài khung giờ gửi tin nhắn. Bỏ qua gửi follow-up cho Zalo ID ${accountId}.`);
+        continue;
+      }
+
+      const loggedIn = await isZaloLoggedIn(accountId);
+      if (!loggedIn) {
+        logCallback(`[Follow-up] Zalo ID ${accountId} chưa đăng nhập. Bỏ qua gửi follow-up.`);
+        continue;
+      }
+
+      logCallback(`[Follow-up] Bắt đầu gửi follow-up cho ${items.length} leads qua Zalo ID ${accountId}...`);
+      
+      try {
+        await initZaloSession(accountId, logCallback, true);
+        for (const item of items) {
+          // Kiểm tra xem chiến dịch có bị dừng đột ngột giữa chừng không
+          const checkStatus = await get('SELECT value FROM configs WHERE key = "zalo_campaign_status"');
+          if (!checkStatus || checkStatus.value !== 'active') {
+            logCallback('[Follow-up] Chiến dịch Zalo bị tạm dừng. Dừng tiến trình gửi follow-up.');
+            break;
+          }
+
+          const { lead, stage, template } = item;
+          if (!template) {
+            logCallback(`[Follow-up] Lead ID ${lead.id} stage ${stage} không có template tin nhắn. Bỏ qua.`);
+            continue;
+          }
+          try {
+            logCallback(`[Follow-up] Đang gửi tin nhắn stage ${stage} cho "${lead.brand_name}" (${lead.phone})...`);
+            await sendZaloMessageDirect(accountId, lead.phone, template, logCallback);
+            
+            await run(`
+              UPDATE leads 
+              SET zalo_followup_stage = ?, 
+                  last_followup_at = CURRENT_TIMESTAMP, 
+                  updated_at = CURRENT_TIMESTAMP 
+              WHERE id = ?
+            `, [stage, lead.id]);
+            
+            logCallback(`[Follow-up] Đã cập nhật lead ID ${lead.id} lên stage ${stage}.`);
+            await new Promise(r => setTimeout(r, 5000));
+          } catch (err) {
+            logCallback(`[Follow-up Error] Lỗi gửi follow-up cho lead ID ${lead.id}: ${err.message}`);
+          }
+        }
+      } catch (err) {
+        logCallback(`[Follow-up Error] Lỗi khi xử lý phiên Zalo ID ${accountId}: ${err.message}`);
+      } finally {
+        await closeZaloSession(accountId);
+      }
+    }
+
+  } catch (err) {
+    logCallback(`[Follow-up Error] Lỗi trong Follow-up Campaign Worker: ${err.message}`);
+  }
+}
+
 // Luồng 2: Chiến dịch gửi tin nhắn kết bạn Zalo tự động (chạy song song dựa trên danh sách đã xác thực)
 export async function runZaloCampaignWorker() {
   if (isZaloWorkerRunning) return;
@@ -271,6 +443,9 @@ export async function runZaloCampaignWorker() {
   logZalo('--- BẮT ĐẦU CHẠY LUỒNG GỬI ZALO TỰ ĐỘNG ---');
 
   try {
+    // Chạy chiến dịch chăm sóc Follow-up (1-3-5 ngày) & chuyển giao
+    await runFollowUpCampaignWorker(logZalo);
+
     const connectedAccounts = await all("SELECT id, assigned_regions FROM zalo_accounts WHERE status = 'connected'");
 
     if (connectedAccounts.length > 0) {

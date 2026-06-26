@@ -157,7 +157,7 @@ export async function sendZaloInvite(accountId, leadId, logCallback = log) {
       notes.push('Đã gửi tin mời.');
     }
 
-    await run("UPDATE leads SET zalo_status = ?, zalo_notes = ?, assigned_zalo_account_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", [finalStatus, notes.join(' | '), accountId, leadId]);
+    await run("UPDATE leads SET zalo_status = ?, zalo_notes = ?, assigned_zalo_account_id = ?, zalo_followup_stage = 0, last_followup_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?", [finalStatus, notes.join(' | '), accountId, leadId]);
     
     if (finalStatus !== 'blocked') {
       const nowIso = new Date().toISOString();
@@ -333,48 +333,129 @@ export async function syncZaloChat(accountId, leadId, logCallback = log) {
       );
 
       if (msg.sender === 'client') {
+        // Dừng luồng follow-up ngay lập tức khi khách nhắn tin phản hồi
+        await run(
+          "UPDATE leads SET zalo_followup_stage = -1, zalo_status = 'client_replied', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+          [leadId]
+        );
+        logCallback(`[Chatbot] Đã cập nhật trạng thái lead ID ${leadId} thành 'client_replied' và stage -1 (Dừng follow-up).`);
+
         (async () => {
           try {
-            const webhookUrlRow = await get("SELECT value FROM configs WHERE key = 'n8n_chatbot_webhook_url'");
-            const webhookUrl = webhookUrlRow ? webhookUrlRow.value : '';
-            if (webhookUrl && webhookUrl.trim() !== '') {
-              const accountRow = await get("SELECT custom_name, display_name FROM zalo_accounts WHERE id = ?", [accountId]);
-              const accountName = accountRow ? (accountRow.custom_name || accountRow.display_name || `Account #${accountId}`) : `Account #${accountId}`;
-              
-              const payload = {
-                event: 'new_message',
-                zalo_account_id: parseInt(accountId, 10),
-                zalo_account_name: accountName,
-                lead_id: parseInt(leadId, 10),
-                lead_name: lead.brand_name,
-                phone: phone,
-                message: msg.text,
-                sender: 'client',
-                timestamp: nowIso
-              };
+            const enabledRow = await get("SELECT value FROM configs WHERE key = 'chatbot_enabled'");
+            const isEnabled = enabledRow ? enabledRow.value === 'true' : false;
 
-              logCallback(`[Chatbot] Đang gửi tin nhắn mới đến n8n Webhook...`);
+            if (isEnabled) {
+              const groqKeyRow = await get("SELECT value FROM configs WHERE key = 'groq_api_key'");
+              const groqApiKey = groqKeyRow ? groqKeyRow.value : '';
               
-              const response = await fetch(webhookUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-              });
+              const keywordsRow = await get("SELECT value FROM configs WHERE key = 'chatbot_inscope_keywords'");
+              const keywordsStr = keywordsRow ? keywordsRow.value : '';
+              const keywords = keywordsStr.split(',').map(k => k.trim().toLowerCase()).filter(Boolean);
 
-              if (response.ok) {
-                const result = await response.json();
-                if (result && result.reply && result.reply.trim() !== '') {
-                  logCallback(`[Chatbot] Nhận phản hồi tự động từ n8n cho SĐT ${phone}: "${result.reply}"`);
-                  await sendZaloMessageDirect(accountId, phone, result.reply, logCallback);
-                } else {
-                  logCallback(`[Chatbot] Phản hồi rỗng từ n8n (Không cần trả lời tự động).`);
-                }
+              const cannedRepliesRow = await get("SELECT value FROM configs WHERE key = 'chatbot_canned_replies'");
+              let cannedReplies = [];
+              try {
+                cannedReplies = JSON.parse(cannedRepliesRow ? cannedRepliesRow.value : '[]');
+              } catch (e) {
+                cannedReplies = [];
+              }
+              if (!Array.isArray(cannedReplies) || cannedReplies.length === 0) {
+                cannedReplies = ["Dạ, hiện tại em chưa rõ câu hỏi của anh/chị. Anh/chị cần hỗ trợ thông tin gì ạ?"];
+              }
+
+              const msgTextLower = msg.text.toLowerCase();
+              const isInScope = keywords.length === 0 || keywords.some(kw => msgTextLower.includes(kw));
+
+              if (!isInScope) {
+                const randomReply = cannedReplies[Math.floor(Math.random() * cannedReplies.length)];
+                logCallback(`[Chatbot] Phát hiện tin nhắn ngoài luồng cho SĐT ${phone}. Gửi tin nhắn mẫu sẵn: "${randomReply}"`);
+                await sendZaloMessageDirect(accountId, phone, randomReply, logCallback);
               } else {
-                logCallback(`[Chatbot Error] n8n Webhook trả về lỗi HTTP ${response.status}`);
+                if (!groqApiKey) {
+                  logCallback(`[Chatbot Error] Đã bật AI Chatbot nhưng chưa cấu hình Groq API Key.`);
+                  const randomReply = cannedReplies[Math.floor(Math.random() * cannedReplies.length)];
+                  await sendZaloMessageDirect(accountId, phone, randomReply, logCallback);
+                } else {
+                  const faqs = await all('SELECT question, answer FROM knowledge_base');
+                  
+                  const systemPrompt = `Bạn là một trợ lý AI thông minh, tư vấn cho khách hàng về dự án "Hành trình Trăm năm Di sản Hội họa Sơn mài Mỹ thuật Việt Nam".
+Hãy sử dụng bộ tài liệu câu hỏi - trả lời (FAQ) dưới đây để trả lời câu hỏi của khách hàng một cách chính xác, ngắn gọn, lịch sự bằng tiếng Việt. 
+Không bịa đặt thông tin. Nếu thông tin không nằm trong FAQ, hãy trả lời khéo léo rằng anh/chị vui lòng chờ giây lát, ban tổ chức sẽ liên hệ hỗ trợ thêm chi tiết.
+
+Bộ tài liệu FAQ:
+${faqs.map(faq => `Q: ${faq.question}\nA: ${faq.answer}`).join('\n\n')}
+`;
+
+                  logCallback(`[Chatbot] Đang gọi Groq API (llama3-8b-8192) để trả lời câu hỏi trong luồng...`);
+                  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Bearer ${groqApiKey}`,
+                      'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                      model: 'llama3-8b-8192',
+                      messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: msg.text }
+                      ],
+                      temperature: 0.7
+                    })
+                  });
+
+                  if (response.ok) {
+                    const data = await response.json();
+                    const replyText = data.choices?.[0]?.message?.content?.trim();
+                    if (replyText) {
+                      logCallback(`[Chatbot] Trả lời tự động bằng AI cho SĐT ${phone}: "${replyText}"`);
+                      await sendZaloMessageDirect(accountId, phone, replyText, logCallback);
+                    } else {
+                      logCallback(`[Chatbot Error] Groq API trả về phản hồi rỗng.`);
+                    }
+                  } else {
+                    const errText = await response.text();
+                    logCallback(`[Chatbot Error] Groq API trả về lỗi HTTP ${response.status}: ${errText}`);
+                  }
+                }
+              }
+            } else {
+              const webhookUrlRow = await get("SELECT value FROM configs WHERE key = 'n8n_chatbot_webhook_url'");
+              const webhookUrl = webhookUrlRow ? webhookUrlRow.value : '';
+              if (webhookUrl && webhookUrl.trim() !== '') {
+                const accountRow = await get("SELECT custom_name, display_name FROM zalo_accounts WHERE id = ?", [accountId]);
+                const accountName = accountRow ? (accountRow.custom_name || accountRow.display_name || `Account #${accountId}`) : `Account #${accountId}`;
+                
+                const payload = {
+                  event: 'new_message',
+                  zalo_account_id: parseInt(accountId, 10),
+                  zalo_account_name: accountName,
+                  lead_id: parseInt(leadId, 10),
+                  lead_name: lead.brand_name,
+                  phone: phone,
+                  message: msg.text,
+                  sender: 'client',
+                  timestamp: nowIso
+                };
+
+                logCallback(`[Chatbot n8n] Đang gửi tin nhắn mới đến n8n Webhook...`);
+                const response = await fetch(webhookUrl, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(payload)
+                });
+
+                if (response.ok) {
+                  const result = await response.json();
+                  if (result && result.reply && result.reply.trim() !== '') {
+                    logCallback(`[Chatbot n8n] Nhận phản hồi tự động từ n8n cho SĐT ${phone}: "${result.reply}"`);
+                    await sendZaloMessageDirect(accountId, phone, result.reply, logCallback);
+                  }
+                }
               }
             }
           } catch (err) {
-            logCallback(`[Chatbot Error] Gặp lỗi khi kích hoạt chatbot n8n cho SĐT ${phone}: ${err.message}`);
+            logCallback(`[Chatbot Error] Gặp lỗi khi xử lý trả lời tự động cho SĐT ${phone}: ${err.message}`);
           }
         })();
       }

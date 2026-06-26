@@ -53,6 +53,9 @@ function initDb() {
         zalo_notes TEXT,
         sheet_sync_status TEXT DEFAULT 'pending',
         assigned_zalo_account_id INTEGER,
+        zalo_followup_stage INTEGER DEFAULT 0,
+        last_followup_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        transfer_count INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
@@ -118,9 +121,36 @@ function initDb() {
       )
     `);
 
+    db.run(`
+      CREATE TABLE IF NOT EXISTS knowledge_base (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        question TEXT NOT NULL,
+        answer TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS lead_transfer_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        lead_id INTEGER NOT NULL,
+        from_account_id INTEGER,
+        to_account_id INTEGER,
+        reason TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     // Migration for existing tables
     db.run("ALTER TABLE zalo_accounts ADD COLUMN custom_name TEXT", (err) => {});
     db.run("ALTER TABLE zalo_accounts ADD COLUMN assigned_regions TEXT", (err) => {});
+    db.run("ALTER TABLE leads ADD COLUMN zalo_followup_stage INTEGER DEFAULT 0", (err) => {});
+    db.run("ALTER TABLE leads ADD COLUMN last_followup_at DATETIME", (err) => {
+      if (!err) {
+        db.run("UPDATE leads SET last_followup_at = CURRENT_TIMESTAMP WHERE last_followup_at IS NULL");
+      }
+    });
+    db.run("ALTER TABLE leads ADD COLUMN transfer_count INTEGER DEFAULT 0", (err) => {});
     
     // Register default configs
     db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('n8n_webhook_token', 'n8n_zalo_secure_token_2026')");
@@ -134,6 +164,13 @@ function initDb() {
     db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('report_receiver', '')");
     db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('email_reporting_enabled', 'false')");
     db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('zalo_campaign_status', 'idle')");
+    db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('groq_api_key', '')");
+    db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('chatbot_enabled', 'false')");
+    db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('chatbot_inscope_keywords', 'sơn mài, di sản, tranh, gốm, mỹ nghệ, mỹ thuật, thêu, hội họa, triển lãm, hội viên, đăng ký, bình chọn, website')");
+    db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('chatbot_canned_replies', '[\"Dạ, hiện tại em chưa rõ câu hỏi của anh/chị. Anh/chị cần hỗ trợ thông tin gì về Hành trình Trăm năm Di sản Sơn mài ạ?\", \"Dạ em chưa hiểu rõ ý anh/chị. Anh/chị có thể nói rõ hơn về thông tin anh/chị đang quan tâm trong dự án Trăm năm Di sản không ạ?\"]')");
+    db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('zalo_day1_template', 'Dạ em chào anh/chị, không biết anh/chị đã xem qua lời mời tham gia Hành trình Trăm năm Di sản Sơn mài bên em gửi chưa ạ?')");
+    db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('zalo_day3_template', 'Em chào anh/chị, em gửi lại thông tin quyền lợi hội viên viết bài miễn phí trên trang dự án Trăm năm Di sản. Không biết anh/chị có tiện trao đổi không ạ?')");
+
     db.run("SELECT 1", () => {
       resolveDbReady();
     });
