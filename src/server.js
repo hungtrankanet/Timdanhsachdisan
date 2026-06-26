@@ -618,33 +618,40 @@ Hãy trả về duy nhất một đối tượng JSON có cấu trúc chính xá
 }
 Không viết bất kỳ lời dẫn giải nào, không định dạng markdown \`\`\`json ở đầu và cuối, chỉ trả về chuỗi JSON object hợp lệ.`;
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              {
-                text: `${systemPrompt}\n\nNội dung tài liệu thô:\n${text}`
-              }
-            ]
-          }
-        ],
-        generationConfig: {
-          responseMimeType: "application/json"
-        }
-      })
-    });
+    // Try models in order — auto-fallback if a model is deprecated
+    const GEMINI_MODELS = [
+      'gemini-2.5-flash',
+      'gemini-2.5-flash-preview-05-20',
+      'gemini-2.0-flash-lite',
+      'gemini-1.5-flash-latest'
+    ];
 
-    if (!response.ok) {
-      const errText = await response.text();
-      return res.status(500).json({ error: `Gemini API returned HTTP ${response.status}: ${errText}` });
+    let response = null;
+    let usedModel = null;
+    for (const model of GEMINI_MODELS) {
+      response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiApiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: `${systemPrompt}\n\nNội dung tài liệu thô:\n${text}` }] }],
+          generationConfig: { responseMimeType: 'application/json' }
+        })
+      });
+      if (response.ok) { usedModel = model; break; }
+      const isDeprecated = response.status === 404;
+      if (!isDeprecated) {
+        const errText = await response.text();
+        return res.status(response.status).json({ error: `Gemini API (${model}) returned HTTP ${response.status}: ${errText}` });
+      }
+      console.warn(`[Gemini] Model "${model}" không khả dụng (404), thử model tiếp theo...`);
+    }
+
+    if (!response || !response.ok) {
+      return res.status(500).json({ error: 'Tất cả Gemini model đều không khả dụng. Vui lòng kiểm tra lại API Key.' });
     }
 
     const data = await response.json();
+    console.log(`[Gemini] Đã dùng model: ${usedModel}`);
     const content = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
     if (!content) {
       return res.status(500).json({ error: 'Gemini API không trả về nội dung.' });
@@ -670,7 +677,7 @@ Không viết bất kỳ lời dẫn giải nào, không định dạng markdown
   }
 });
 
-// AI Save All Configurations & FAQs
+
 app.post('/api/ai/save-all', async (req, res) => {
   const { configs, faqs } = req.body;
   try {
