@@ -574,7 +574,7 @@ app.delete('/api/ai/faq', async (req, res) => {
   }
 });
 
-// AI FAQ Extraction
+// AI FAQ & Config Extraction
 app.post('/api/ai/extract-faq', async (req, res) => {
   const { text } = req.body;
   if (!text || text.trim() === '') {
@@ -588,16 +588,31 @@ app.post('/api/ai/extract-faq', async (req, res) => {
       return res.status(400).json({ error: 'Chưa cấu hình Groq API Key.' });
     }
 
-    const systemPrompt = `Bạn là một trợ lý AI chuyên nghiệp phân tích văn bản. 
-Nhiệm vụ của bạn là đọc kỹ đoạn tài liệu thô do người dùng cung cấp và trích xuất thành danh sách các cặp Câu hỏi (question) và Câu trả lời (answer) tương ứng (FAQ).
-Trả về kết quả duy nhất dưới dạng JSON array có cấu trúc chính xác như sau:
-[
-  {
-    "question": "Câu hỏi trích xuất được hoặc được tổng hợp lại từ tài liệu...",
-    "answer": "Câu trả lời tương ứng lấy từ thông tin trong tài liệu..."
-  }
-]
-Không viết bất kỳ lời dẫn giải nào, không định dạng markdown \`\`\`json ở đầu và cuối, chỉ trả về chuỗi JSON array hợp lệ.`;
+    const systemPrompt = `Bạn là một trợ lý AI chuyên nghiệp phân tích văn bản và thiết lập cấu hình Zalo Chatbot Agent.
+Nhiệm vụ của bạn là đọc kỹ tài liệu thô do người dùng cung cấp và trích xuất thành bộ cấu hình đề xuất cho Chatbot, gồm:
+1. Danh sách câu hỏi (question) và câu trả lời (answer) tương ứng (FAQ) bám sát tài liệu.
+2. Danh sách các từ khóa liên quan đến dự án (keywords) phân tách bằng dấu phẩy để nhận diện tin nhắn trong luồng.
+3. Danh sách 2 câu trả lời mẫu sẵn ngoài luồng (canned_replies) lịch sự, chung chung khi khách hỏi vấn đề khác.
+4. Tin nhắn mẫu kịch bản chăm sóc Ngày 1 (zalo_day1_template) ngắn gọn, hỏi thăm xem khách đã đọc thông tin chưa.
+5. Tin nhắn mẫu kịch bản chăm sóc Ngày 3 (zalo_day3_template) ngắn gọn, nhắc lại quyền lợi hội viên viết bài miễn phí.
+
+Hãy trả về duy nhất một đối tượng JSON có cấu trúc chính xác như sau:
+{
+  "faqs": [
+    {
+      "question": "Câu hỏi trích xuất...",
+      "answer": "Câu trả lời..."
+    }
+  ],
+  "chatbot_inscope_keywords": "từ khóa 1, từ khóa 2, từ khóa 3...",
+  "chatbot_canned_replies": [
+    "Phản hồi ngoài luồng 1...",
+    "Phản hồi ngoài luồng 2..."
+  ],
+  "zalo_day1_template": "Tin nhắn ngày 1...",
+  "zalo_day3_template": "Tin nhắn ngày 3..."
+}
+Không viết bất kỳ lời dẫn giải nào, không định dạng markdown \`\`\`json ở đầu và cuối, chỉ trả về chuỗi JSON object hợp lệ.`;
 
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
@@ -611,7 +626,7 @@ Không viết bất kỳ lời dẫn giải nào, không định dạng markdown
           { role: 'system', content: systemPrompt },
           { role: 'user', content: text }
         ],
-        temperature: 0.1
+        temperature: 0.2
       })
     });
 
@@ -632,27 +647,45 @@ Không viết bất kỳ lời dẫn giải nào, không định dạng markdown
     }
     cleanJson = cleanJson.trim();
 
-    let faqList;
+    let extractedData;
     try {
-      faqList = JSON.parse(cleanJson);
+      extractedData = JSON.parse(cleanJson);
     } catch (e) {
       console.error('Failed to parse JSON from Groq:', cleanJson);
       return res.status(500).json({ error: 'Không thể parse JSON từ phản hồi của Groq. Vui lòng thử lại.', raw: content });
     }
 
-    if (!Array.isArray(faqList)) {
-      return res.status(500).json({ error: 'Groq không trả về một array JSON hợp lệ.' });
-    }
+    res.json({ success: true, ...extractedData });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
+// AI Save All Configurations & FAQs
+app.post('/api/ai/save-all', async (req, res) => {
+  const { configs, faqs } = req.body;
+  try {
     await run('BEGIN TRANSACTION');
-    for (const faq of faqList) {
-      if (faq.question && faq.answer) {
-        await run('INSERT INTO knowledge_base (question, answer) VALUES (?, ?)', [faq.question.trim(), faq.answer.trim()]);
+
+    if (configs) {
+      const keys = ['chatbot_enabled', 'chatbot_inscope_keywords', 'chatbot_canned_replies', 'zalo_day1_template', 'zalo_day3_template'];
+      for (const key of keys) {
+        if (configs[key] !== undefined) {
+          await run('INSERT OR REPLACE INTO configs (key, value) VALUES (?, ?)', [key, String(configs[key])]);
+        }
       }
     }
-    await run('COMMIT');
 
-    res.json({ success: true, count: faqList.length, faqs: faqList });
+    if (Array.isArray(faqs)) {
+      for (const faq of faqs) {
+        if (faq.question && faq.answer) {
+          await run('INSERT INTO knowledge_base (question, answer) VALUES (?, ?)', [faq.question.trim(), faq.answer.trim()]);
+        }
+      }
+    }
+
+    await run('COMMIT');
+    res.json({ success: true });
   } catch (err) {
     try { await run('ROLLBACK'); } catch (_) {}
     res.status(500).json({ error: err.message });

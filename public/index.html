@@ -374,6 +374,54 @@
           </div>
         </div>
 
+        <!-- AI FAQ Draft Preview & Edit -->
+        <div id="ai-extract-preview-container" class="glass-card" style="display: none; margin-bottom: 25px; border-color: var(--accent-gold); background: rgba(0,0,0,0.65);">
+          <div class="card-header" style="justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 10px; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+            <div style="display: flex; flex-direction: column; gap: 5px;">
+              <h2 style="color: var(--accent-gold); margin: 0;">Kết quả trích xuất đề xuất từ AI</h2>
+              <span style="font-size: 12px; color: var(--text-muted);">Vui lòng kiểm tra, chỉnh sửa thông tin bên dưới trước khi bấm Lưu vào hệ thống.</span>
+            </div>
+            <div style="display: flex; gap: 10px;">
+              <button id="btn-save-all-drafts" class="btn btn-secondary btn-sm">Lưu cấu hình & tri thức</button>
+              <button id="btn-cancel-all-drafts" class="btn btn-primary-outline btn-sm" style="border-color: var(--accent-red); color: var(--accent-red);">Hủy bỏ nháp</button>
+            </div>
+          </div>
+
+          <h3 style="color: #fff; margin-bottom: 10px; font-size: 14px; font-weight: 600;">I. ĐỀ XUẤT CẤU HÌNH AGENT</h3>
+          <div class="grid-layout" style="grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; border-bottom: 1px dashed rgba(255,255,255,0.05); padding-bottom: 20px;">
+            <div>
+              <div class="form-group">
+                <label for="draft-keywords">Từ khóa nhận diện trong luồng</label>
+                <input type="text" id="draft-keywords" style="background: rgba(0,0,0,0.5);">
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label for="draft-canned-replies">Câu trả lời mẫu ngoài luồng (JSON Array)</label>
+                <textarea id="draft-canned-replies" rows="4" style="background: rgba(0,0,0,0.5); font-family: monospace; font-size: 12px;"></textarea>
+              </div>
+            </div>
+            <div>
+              <div class="form-group">
+                <label for="draft-day1-template">Tin nhắn kịch bản Ngày 1</label>
+                <textarea id="draft-day1-template" rows="3" style="background: rgba(0,0,0,0.5);"></textarea>
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label for="draft-day3-template">Tin nhắn kịch bản Ngày 3</label>
+                <textarea id="draft-day3-template" rows="3" style="background: rgba(0,0,0,0.5);"></textarea>
+              </div>
+            </div>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <h3 style="color: #fff; font-size: 14px; font-weight: 600; margin: 0;">II. BẢN NHÁP CÂU HỎI FAQ TRI THỨC</h3>
+            <button id="btn-add-draft-faq" class="btn btn-secondary-outline btn-sm">+ Thêm câu hỏi nháp</button>
+          </div>
+          
+          <div id="draft-faq-list" style="display: flex; flex-direction: column; gap: 15px; max-height: 500px; overflow-y: auto; padding-right: 5px;">
+            <!-- Extracted FAQs will be loaded dynamically here -->
+          </div>
+        </div>
+
+
         <!-- 2. FAQ CRUD Management -->
         <div class="glass-card" style="margin-bottom: 25px;">
           <div class="card-header" style="justify-content: space-between; align-items: center; gap: 15px; flex-wrap: wrap;">

@@ -1,5 +1,7 @@
 // AI Agent Dashboard Logic
 
+let draftFaqs = [];
+
 document.addEventListener('DOMContentLoaded', () => {
   setupAiEventListeners();
 });
@@ -187,7 +189,7 @@ function setupAiEventListeners() {
     });
   }
 
-  // Extract FAQ
+  // Extract FAQ & Configs (AI Proposal)
   const btnExtractFaq = document.getElementById('btn-extract-faq');
   if (btnExtractFaq) {
     btnExtractFaq.addEventListener('click', async () => {
@@ -198,7 +200,7 @@ function setupAiEventListeners() {
       }
       
       btnExtractFaq.disabled = true;
-      btnExtractFaq.textContent = 'Đang trích xuất...';
+      btnExtractFaq.textContent = 'Đang phân tích tri thức...';
       
       try {
         const res = await fetch('/api/ai/extract-faq', {
@@ -209,9 +211,28 @@ function setupAiEventListeners() {
         const data = await res.json();
         
         if (res.ok && data.success) {
-          if (typeof showToast === 'function') showToast(`Đã trích xuất thành công ${data.count} câu hỏi - đáp từ tài liệu!`, 'success');
+          if (typeof showToast === 'function') showToast(`AI đã trích xuất thành công các đề xuất cấu hình và tri thức!`, 'success');
+          
+          // Populate drafts
+          document.getElementById('draft-keywords').value = data.chatbot_inscope_keywords || '';
+          
+          let cannedText = '[]';
+          if (Array.isArray(data.chatbot_canned_replies)) {
+            cannedText = JSON.stringify(data.chatbot_canned_replies, null, 2);
+          }
+          document.getElementById('draft-canned-replies').value = cannedText;
+          document.getElementById('draft-day1-template').value = data.zalo_day1_template || '';
+          document.getElementById('draft-day3-template').value = data.zalo_day3_template || '';
+          
+          draftFaqs = Array.isArray(data.faqs) ? data.faqs : [];
+          renderDraftFaqs();
+          
+          // Show draft container
+          const draftContainer = document.getElementById('ai-extract-preview-container');
+          draftContainer.style.display = 'block';
+          draftContainer.scrollIntoView({ behavior: 'smooth' });
+          
           document.getElementById('ai-extract-text').value = '';
-          loadFAQs();
         } else {
           throw new Error(data.error || 'Trích xuất tri thức thất bại.');
         }
@@ -224,11 +245,96 @@ function setupAiEventListeners() {
     });
   }
 
+  // Save All drafts
+  const btnSaveAllDrafts = document.getElementById('btn-save-all-drafts');
+  if (btnSaveAllDrafts) {
+    btnSaveAllDrafts.addEventListener('click', async () => {
+      const chatbot_inscope_keywords = document.getElementById('draft-keywords').value.trim();
+      let chatbot_canned_replies = document.getElementById('draft-canned-replies').value.trim();
+      const zalo_day1_template = document.getElementById('draft-day1-template').value.trim();
+      const zalo_day3_template = document.getElementById('draft-day3-template').value.trim();
+      
+      // Validate canned replies JSON
+      try {
+        const parsed = JSON.parse(chatbot_canned_replies);
+        if (!Array.isArray(parsed)) throw new Error();
+        chatbot_canned_replies = JSON.stringify(parsed);
+      } catch (e) {
+        if (typeof showToast === 'function') {
+          showToast('Câu trả lời ngoài luồng nháp phải là một JSON array hợp lệ.', 'error');
+        }
+        return;
+      }
+
+      // Collect FAQs from inputs to ensure latest edits are caught
+      const faqList = [];
+      const faqItems = document.querySelectorAll('.draft-faq-item');
+      faqItems.forEach((el, index) => {
+        const question = el.querySelector('.draft-faq-question').value.trim();
+        const answer = el.querySelector('.draft-faq-answer').value.trim();
+        if (question && answer) {
+          faqList.push({ question, answer });
+        }
+      });
+
+      try {
+        const res = await fetch('/api/ai/save-all', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            configs: {
+              chatbot_inscope_keywords,
+              chatbot_canned_replies,
+              zalo_day1_template,
+              zalo_day3_template
+            },
+            faqs: faqList
+          })
+        });
+
+        if (res.ok) {
+          if (typeof showToast === 'function') showToast('Đã lưu cấu hình & cơ sở tri thức FAQ thành công!', 'success');
+          document.getElementById('ai-extract-preview-container').style.display = 'none';
+          draftFaqs = [];
+          loadAiAgentConfig();
+          loadFAQs();
+        } else {
+          throw new Error('Lỗi lưu toàn bộ tri thức.');
+        }
+      } catch (err) {
+        if (typeof showToast === 'function') showToast(err.message, 'error');
+      }
+    });
+  }
+
+  // Cancel drafts
+  const btnCancelAllDrafts = document.getElementById('btn-cancel-all-drafts');
+  if (btnCancelAllDrafts) {
+    btnCancelAllDrafts.addEventListener('click', () => {
+      if (confirm('Bạn có chắc chắn muốn hủy bỏ bản nháp trích xuất này không?')) {
+        document.getElementById('ai-extract-preview-container').style.display = 'none';
+        draftFaqs = [];
+      }
+    });
+  }
+
+  // Add blank draft FAQ
+  const btnAddDraftFaq = document.getElementById('btn-add-draft-faq');
+  if (btnAddDraftFaq) {
+    btnAddDraftFaq.addEventListener('click', () => {
+      // Save current input values first before re-rendering
+      syncDraftInputsToMemory();
+      
+      draftFaqs.push({ question: '', answer: '' });
+      renderDraftFaqs();
+    });
+  }
+
   // Clear all FAQ
   const btnClearAll = document.getElementById('btn-clear-all-faq');
   if (btnClearAll) {
     btnClearAll.addEventListener('click', async () => {
-      if (confirm('CẢNH BÁO: Bạn có chắc chắn muốn xóa toàn bộ tri thức FAQ? Hành động này không thể hoàn tác.')) {
+      if (confirm('CẢNH BÁO: Bạn có chắc chắn muốn xóa toàn bộ tri thức FAQ trong hệ thống? Hành động này không thể hoàn tác.')) {
         try {
           const res = await fetch('/api/ai/faq', { method: 'DELETE' });
           if (res.ok) {
@@ -244,7 +350,7 @@ function setupAiEventListeners() {
     });
   }
 
-  // Manual Add UI Trigger
+  // Manual Add FAQ trigger
   const btnAddManual = document.getElementById('btn-add-faq-manual');
   if (btnAddManual) {
     btnAddManual.addEventListener('click', () => {
@@ -301,6 +407,60 @@ function setupAiEventListeners() {
       }
     });
   }
+}
+
+// Render Draft FAQs
+function renderDraftFaqs() {
+  const container = document.getElementById('draft-faq-list');
+  if (!container) return;
+  container.innerHTML = '';
+  
+  if (draftFaqs.length === 0) {
+    container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 13px; padding: 20px;">Không có câu hỏi nháp. Hãy bấm "+ Thêm câu hỏi nháp" để tạo thủ công.</div>`;
+    return;
+  }
+  
+  draftFaqs.forEach((faq, index) => {
+    const card = document.createElement('div');
+    card.className = 'glass-card draft-faq-item';
+    card.style.background = 'rgba(255,255,255,0.02)';
+    card.style.padding = '15px';
+    card.style.marginBottom = '0';
+    card.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+        <span style="font-size: 12px; color: var(--accent-gold); font-weight: bold;">Câu hỏi nháp #${index + 1}</span>
+        <button class="btn btn-primary-outline btn-sm btn-delete-draft-faq" data-index="${index}" style="border-color: var(--accent-red); color: var(--accent-red); padding: 3px 8px; font-size: 11px;">Xóa nháp</button>
+      </div>
+      <div class="form-group" style="margin-bottom: 10px;">
+        <input type="text" class="draft-faq-question" style="background: rgba(0,0,0,0.5); padding: 8px 12px;" placeholder="Nhập câu hỏi..." value="${escapeHtml(faq.question)}">
+      </div>
+      <div class="form-group" style="margin-bottom: 0;">
+        <textarea class="draft-faq-answer" rows="2" style="background: rgba(0,0,0,0.5); padding: 8px 12px;" placeholder="Nhập câu trả lời...">${escapeHtml(faq.answer)}</textarea>
+      </div>
+    `;
+    container.appendChild(card);
+  });
+  
+  // Bind draft delete buttons
+  container.querySelectorAll('.btn-delete-draft-faq').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      syncDraftInputsToMemory();
+      const index = parseInt(e.target.getAttribute('data-index'), 10);
+      draftFaqs.splice(index, 1);
+      renderDraftFaqs();
+    });
+  });
+}
+
+// Sync values from draft inputs to memory before modifying draftFaqs array structure
+function syncDraftInputsToMemory() {
+  const faqItems = document.querySelectorAll('.draft-faq-item');
+  faqItems.forEach((el, index) => {
+    if (draftFaqs[index]) {
+      draftFaqs[index].question = el.querySelector('.draft-faq-question').value;
+      draftFaqs[index].answer = el.querySelector('.draft-faq-answer').value;
+    }
+  });
 }
 
 // FAQ Form Helpers
