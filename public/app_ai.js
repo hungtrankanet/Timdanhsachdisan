@@ -15,6 +15,7 @@ async function loadAiAgentConfig() {
     
     document.getElementById('chatbot-enabled').checked = config.chatbot_enabled === 'true';
     document.getElementById('groq-api-key').value = config.groq_api_key || '';
+    document.getElementById('gemini-api-key').value = config.gemini_api_key || '';
     document.getElementById('chatbot-keywords').value = config.chatbot_inscope_keywords || '';
     
     let cannedRepliesText = config.chatbot_canned_replies || '[]';
@@ -132,6 +133,7 @@ function setupAiEventListeners() {
     btnSaveAiConfig.addEventListener('click', async () => {
       const chatbot_enabled = document.getElementById('chatbot-enabled').checked ? 'true' : 'false';
       const groq_api_key = document.getElementById('groq-api-key').value.trim();
+      const gemini_api_key = document.getElementById('gemini-api-key').value.trim();
       const chatbot_inscope_keywords = document.getElementById('chatbot-keywords').value.trim();
       
       let chatbot_canned_replies = document.getElementById('chatbot-canned-replies').value.trim();
@@ -150,10 +152,10 @@ function setupAiEventListeners() {
         const res = await fetch('/api/ai/config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chatbot_enabled, groq_api_key, chatbot_inscope_keywords, chatbot_canned_replies })
+          body: JSON.stringify({ chatbot_enabled, groq_api_key, gemini_api_key, chatbot_inscope_keywords, chatbot_canned_replies })
         });
         if (res.ok) {
-          if (typeof showToast === 'function') showToast('Đã lưu cấu hình AI Chatbot thành công!', 'success');
+          if (typeof showToast === 'function') showToast('Đã lưu cấu hình AI Agent thành công!', 'success');
           loadAiAgentConfig();
         } else {
           throw new Error('Lỗi lưu cấu hình.');
@@ -189,7 +191,7 @@ function setupAiEventListeners() {
     });
   }
 
-  // Extract FAQ & Configs (AI Proposal)
+  // Extract FAQ & Configs (Gemini AI Proposal)
   const btnExtractFaq = document.getElementById('btn-extract-faq');
   if (btnExtractFaq) {
     btnExtractFaq.addEventListener('click', async () => {
@@ -200,7 +202,7 @@ function setupAiEventListeners() {
       }
       
       btnExtractFaq.disabled = true;
-      btnExtractFaq.textContent = 'Đang phân tích tri thức...';
+      btnExtractFaq.textContent = 'Đang phân tích tri thức (Gemini)...';
       
       try {
         const res = await fetch('/api/ai/extract-faq', {
@@ -211,7 +213,7 @@ function setupAiEventListeners() {
         const data = await res.json();
         
         if (res.ok && data.success) {
-          if (typeof showToast === 'function') showToast(`AI đã trích xuất thành công các đề xuất cấu hình và tri thức!`, 'success');
+          if (typeof showToast === 'function') showToast(`Gemini đã trích xuất thành công các đề xuất cấu hình và tri thức!`, 'success');
           
           // Populate drafts
           document.getElementById('draft-keywords').value = data.chatbot_inscope_keywords || '';
@@ -254,6 +256,9 @@ function setupAiEventListeners() {
       const zalo_day1_template = document.getElementById('draft-day1-template').value.trim();
       const zalo_day3_template = document.getElementById('draft-day3-template').value.trim();
       
+      const groq_api_key = document.getElementById('groq-api-key').value.trim();
+      const gemini_api_key = document.getElementById('gemini-api-key').value.trim();
+
       // Validate canned replies JSON
       try {
         const parsed = JSON.parse(chatbot_canned_replies);
@@ -286,7 +291,9 @@ function setupAiEventListeners() {
               chatbot_inscope_keywords,
               chatbot_canned_replies,
               zalo_day1_template,
-              zalo_day3_template
+              zalo_day3_template,
+              groq_api_key,
+              gemini_api_key
             },
             faqs: faqList
           })
@@ -322,9 +329,7 @@ function setupAiEventListeners() {
   const btnAddDraftFaq = document.getElementById('btn-add-draft-faq');
   if (btnAddDraftFaq) {
     btnAddDraftFaq.addEventListener('click', () => {
-      // Save current input values first before re-rendering
       syncDraftInputsToMemory();
-      
       draftFaqs.push({ question: '', answer: '' });
       renderDraftFaqs();
     });
@@ -441,7 +446,6 @@ function renderDraftFaqs() {
     container.appendChild(card);
   });
   
-  // Bind draft delete buttons
   container.querySelectorAll('.btn-delete-draft-faq').forEach(btn => {
     btn.addEventListener('click', (e) => {
       syncDraftInputsToMemory();

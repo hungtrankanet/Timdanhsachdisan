@@ -466,11 +466,12 @@ app.post('/api/admin/upload-zalo-sessions', express.raw({ type: 'application/oct
 // Get AI Config
 app.get('/api/ai/config', async (req, res) => {
   try {
-    const keys = ['groq_api_key', 'chatbot_enabled', 'chatbot_inscope_keywords', 'chatbot_canned_replies', 'zalo_day1_template', 'zalo_day3_template'];
+    const keys = ['groq_api_key', 'gemini_api_key', 'chatbot_enabled', 'chatbot_inscope_keywords', 'chatbot_canned_replies', 'zalo_day1_template', 'zalo_day3_template'];
     const placeholders = keys.map(() => '?').join(',');
     const rows = await all(`SELECT key, value FROM configs WHERE key IN (${placeholders})`, keys);
     const config = {
       groq_api_key: '',
+      gemini_api_key: '',
       chatbot_enabled: 'false',
       chatbot_inscope_keywords: '',
       chatbot_canned_replies: '[]',
@@ -489,10 +490,11 @@ app.get('/api/ai/config', async (req, res) => {
 
 // Update AI Config
 app.post('/api/ai/config', async (req, res) => {
-  const { groq_api_key, chatbot_enabled, chatbot_inscope_keywords, chatbot_canned_replies, zalo_day1_template, zalo_day3_template } = req.body;
+  const { groq_api_key, gemini_api_key, chatbot_enabled, chatbot_inscope_keywords, chatbot_canned_replies, zalo_day1_template, zalo_day3_template } = req.body;
   try {
     const updates = [
       { key: 'groq_api_key', value: groq_api_key },
+      { key: 'gemini_api_key', value: gemini_api_key },
       { key: 'chatbot_enabled', value: chatbot_enabled },
       { key: 'chatbot_inscope_keywords', value: chatbot_inscope_keywords },
       { key: 'chatbot_canned_replies', value: chatbot_canned_replies },
@@ -582,10 +584,10 @@ app.post('/api/ai/extract-faq', async (req, res) => {
   }
 
   try {
-    const groqKeyRow = await get("SELECT value FROM configs WHERE key = 'groq_api_key'");
-    const groqApiKey = groqKeyRow ? groqKeyRow.value : '';
-    if (!groqApiKey) {
-      return res.status(400).json({ error: 'Chưa cấu hình Groq API Key.' });
+    const geminiKeyRow = await get("SELECT value FROM configs WHERE key = 'gemini_api_key'");
+    const geminiApiKey = geminiKeyRow ? geminiKeyRow.value : '';
+    if (!geminiApiKey) {
+      return res.status(400).json({ error: 'Chưa cấu hình Gemini API Key.' });
     }
 
     const systemPrompt = `Bạn là một trợ lý AI chuyên nghiệp phân tích văn bản và thiết lập cấu hình Zalo Chatbot Agent.
@@ -614,31 +616,36 @@ Hãy trả về duy nhất một đối tượng JSON có cấu trúc chính xá
 }
 Không viết bất kỳ lời dẫn giải nào, không định dạng markdown \`\`\`json ở đầu và cuối, chỉ trả về chuỗi JSON object hợp lệ.`;
 
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${groqApiKey}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'llama3-8b-8192',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: text }
+        contents: [
+          {
+            parts: [
+              {
+                text: `${systemPrompt}\n\nNội dung tài liệu thô:\n${text}`
+              }
+            ]
+          }
         ],
-        temperature: 0.2
+        generationConfig: {
+          responseMimeType: "application/json"
+        }
       })
     });
 
     if (!response.ok) {
       const errText = await response.text();
-      return res.status(500).json({ error: `Groq API returned HTTP ${response.status}: ${errText}` });
+      return res.status(500).json({ error: `Gemini API returned HTTP ${response.status}: ${errText}` });
     }
 
     const data = await response.json();
-    const content = data.choices?.[0]?.message?.content?.trim();
+    const content = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
     if (!content) {
-      return res.status(500).json({ error: 'Groq API không trả về nội dung.' });
+      return res.status(500).json({ error: 'Gemini API không trả về nội dung.' });
     }
 
     let cleanJson = content;
@@ -651,8 +658,8 @@ Không viết bất kỳ lời dẫn giải nào, không định dạng markdown
     try {
       extractedData = JSON.parse(cleanJson);
     } catch (e) {
-      console.error('Failed to parse JSON from Groq:', cleanJson);
-      return res.status(500).json({ error: 'Không thể parse JSON từ phản hồi của Groq. Vui lòng thử lại.', raw: content });
+      console.error('Failed to parse JSON from Gemini:', cleanJson);
+      return res.status(500).json({ error: 'Không thể parse JSON từ phản hồi của Gemini. Vui lòng thử lại.', raw: content });
     }
 
     res.json({ success: true, ...extractedData });
@@ -668,7 +675,7 @@ app.post('/api/ai/save-all', async (req, res) => {
     await run('BEGIN TRANSACTION');
 
     if (configs) {
-      const keys = ['chatbot_enabled', 'chatbot_inscope_keywords', 'chatbot_canned_replies', 'zalo_day1_template', 'zalo_day3_template'];
+      const keys = ['chatbot_enabled', 'chatbot_inscope_keywords', 'chatbot_canned_replies', 'zalo_day1_template', 'zalo_day3_template', 'groq_api_key', 'gemini_api_key'];
       for (const key of keys) {
         if (configs[key] !== undefined) {
           await run('INSERT OR REPLACE INTO configs (key, value) VALUES (?, ?)', [key, String(configs[key])]);

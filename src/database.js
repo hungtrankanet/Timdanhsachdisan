@@ -165,6 +165,7 @@ function initDb() {
     db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('email_reporting_enabled', 'false')");
     db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('zalo_campaign_status', 'idle')");
     db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('groq_api_key', '')");
+    db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('gemini_api_key', '')");
     db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('chatbot_enabled', 'false')");
     db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('chatbot_inscope_keywords', 'sơn mài, di sản, tranh, gốm, mỹ nghệ, mỹ thuật, thêu, hội họa, triển lãm, hội viên, đăng ký, bình chọn, website')");
     db.run("INSERT OR IGNORE INTO configs (key, value) VALUES ('chatbot_canned_replies', '[\"Dạ, hiện tại em chưa rõ câu hỏi của anh/chị. Anh/chị cần hỗ trợ thông tin gì về Hành trình Trăm năm Di sản Sơn mài ạ?\", \"Dạ em chưa hiểu rõ ý anh/chị. Anh/chị có thể nói rõ hơn về thông tin anh/chị đang quan tâm trong dự án Trăm năm Di sản không ạ?\"]')");
