@@ -466,7 +466,7 @@ app.post('/api/admin/upload-zalo-sessions', express.raw({ type: 'application/oct
 // Get AI Config
 app.get('/api/ai/config', async (req, res) => {
   try {
-    const keys = ['groq_api_key', 'gemini_api_key', 'chatbot_enabled', 'chatbot_inscope_keywords', 'chatbot_canned_replies', 'zalo_day1_template', 'zalo_day3_template'];
+    const keys = ['groq_api_key', 'gemini_api_key', 'chatbot_enabled', 'chatbot_inscope_keywords', 'chatbot_canned_replies', 'zalo_day1_template', 'zalo_day3_template', 'ai_raw_document'];
     const placeholders = keys.map(() => '?').join(',');
     const rows = await all(`SELECT key, value FROM configs WHERE key IN (${placeholders})`, keys);
     const config = {
@@ -476,7 +476,8 @@ app.get('/api/ai/config', async (req, res) => {
       chatbot_inscope_keywords: '',
       chatbot_canned_replies: '[]',
       zalo_day1_template: '',
-      zalo_day3_template: ''
+      zalo_day3_template: '',
+      ai_raw_document: ''
     };
     
     for (const row of rows) {
@@ -490,7 +491,7 @@ app.get('/api/ai/config', async (req, res) => {
 
 // Update AI Config
 app.post('/api/ai/config', async (req, res) => {
-  const { groq_api_key, gemini_api_key, chatbot_enabled, chatbot_inscope_keywords, chatbot_canned_replies, zalo_day1_template, zalo_day3_template } = req.body;
+  const { groq_api_key, gemini_api_key, chatbot_enabled, chatbot_inscope_keywords, chatbot_canned_replies, zalo_day1_template, zalo_day3_template, ai_raw_document } = req.body;
   try {
     const updates = [
       { key: 'groq_api_key', value: groq_api_key },
@@ -499,7 +500,8 @@ app.post('/api/ai/config', async (req, res) => {
       { key: 'chatbot_inscope_keywords', value: chatbot_inscope_keywords },
       { key: 'chatbot_canned_replies', value: chatbot_canned_replies },
       { key: 'zalo_day1_template', value: zalo_day1_template },
-      { key: 'zalo_day3_template', value: zalo_day3_template }
+      { key: 'zalo_day3_template', value: zalo_day3_template },
+      { key: 'ai_raw_document', value: ai_raw_document }
     ];
     
     await run('BEGIN TRANSACTION');

@@ -27,6 +27,15 @@ async function loadAiAgentConfig() {
     
     document.getElementById('followup-day1-template').value = config.zalo_day1_template || '';
     document.getElementById('followup-day3-template').value = config.zalo_day3_template || '';
+
+    // Restore saved raw document
+    const savedDoc = config.ai_raw_document || '';
+    const extractTextarea = document.getElementById('ai-extract-text');
+    if (extractTextarea && savedDoc) {
+      extractTextarea.value = savedDoc;
+      const statusEl = document.getElementById('doc-save-status');
+      if (statusEl) statusEl.textContent = '✅ Đã lưu';
+    }
   } catch (err) {
     if (typeof showToast === 'function') showToast(err.message, 'error');
   }
@@ -330,6 +339,49 @@ function setupAiEventListeners() {
   if (btnSaveAllDraftsBottom && btnSaveAllDrafts) {
     btnSaveAllDraftsBottom.addEventListener('click', () => {
       btnSaveAllDrafts.click();
+    });
+  }
+
+  // Save raw document button
+  const btnSaveRawDoc = document.getElementById('btn-save-raw-doc');
+  const extractTextarea = document.getElementById('ai-extract-text');
+  const docSaveStatus = document.getElementById('doc-save-status');
+
+  // Mark unsaved when user types
+  if (extractTextarea && docSaveStatus) {
+    extractTextarea.addEventListener('input', () => {
+      docSaveStatus.textContent = '● Chưa lưu';
+      docSaveStatus.style.color = 'var(--accent-gold)';
+    });
+  }
+
+  if (btnSaveRawDoc && extractTextarea) {
+    btnSaveRawDoc.addEventListener('click', async () => {
+      const ai_raw_document = extractTextarea.value;
+      btnSaveRawDoc.disabled = true;
+      btnSaveRawDoc.textContent = 'Đang lưu...';
+      try {
+        const res = await fetch('/api/ai/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ai_raw_document })
+        });
+        if (res.ok) {
+          const now = new Date().toLocaleTimeString('vi-VN');
+          if (docSaveStatus) {
+            docSaveStatus.textContent = `✅ Đã lưu lúc ${now}`;
+            docSaveStatus.style.color = 'var(--text-muted)';
+          }
+          if (typeof showToast === 'function') showToast('Đã lưu tài liệu thành công!', 'success');
+        } else {
+          throw new Error('Lỗi khi lưu tài liệu.');
+        }
+      } catch (err) {
+        if (typeof showToast === 'function') showToast(err.message, 'error');
+      } finally {
+        btnSaveRawDoc.disabled = false;
+        btnSaveRawDoc.textContent = '💾 Lưu tài liệu';
+      }
     });
   }
 
