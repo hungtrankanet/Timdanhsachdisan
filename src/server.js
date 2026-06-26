@@ -618,7 +618,7 @@ Hãy trả về duy nhất một đối tượng JSON có cấu trúc chính xá
 }
 Không viết bất kỳ lời dẫn giải nào, không định dạng markdown \`\`\`json ở đầu và cuối, chỉ trả về chuỗi JSON object hợp lệ.`;
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`, {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
