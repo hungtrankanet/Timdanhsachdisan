@@ -17,6 +17,14 @@ export async function sendZaloInvite(accountId, leadId, logCallback = log) {
   if (!session || !session.page) {
     throw new Error(`Không thể khởi chạy phiên kết nối Zalo cho tài khoản ID ${accountId}.`);
   }
+  
+  const isTrulyLoggedIn = await isZaloLoggedIn(accountId, true);
+  if (!isTrulyLoggedIn) {
+    logCallback(`[Zalo ID ${accountId}] Phiên đăng nhập đã hết hạn hoặc chưa đăng nhập. Cập nhật trạng thái disconnected.`);
+    await run("UPDATE zalo_accounts SET status = 'disconnected', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [accountId]);
+    throw new Error(`Tài khoản Zalo ID ${accountId} chưa đăng nhập (đang chờ quét mã QR). Dừng tiến trình gửi.`);
+  }
+
   const zaloPage = session.page;
 
   const lead = await get('SELECT * FROM leads WHERE id = ?', [leadId]);
@@ -219,6 +227,14 @@ export async function syncZaloChat(accountId, leadId, logCallback = log) {
   if (!session || !session.page) {
     throw new Error(`Không thể khởi chạy phiên kết nối Zalo cho tài khoản ID ${accountId}.`);
   }
+  
+  const isTrulyLoggedIn = await isZaloLoggedIn(accountId, true);
+  if (!isTrulyLoggedIn) {
+    logCallback(`[Zalo ID ${accountId}] Phiên đăng nhập đã hết hạn hoặc chưa đăng nhập. Cập nhật trạng thái disconnected.`);
+    await run("UPDATE zalo_accounts SET status = 'disconnected', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [accountId]);
+    throw new Error(`Tài khoản Zalo ID ${accountId} chưa đăng nhập (đang chờ quét mã QR). Dừng tiến trình gửi.`);
+  }
+
   const zaloPage = session.page;
 
   const lead = await get('SELECT * FROM leads WHERE id = ?', [leadId]);
@@ -521,6 +537,14 @@ export async function sendZaloMessageDirect(accountId, phone, messageText, logCa
   if (!session || !session.page) {
     throw new Error(`Không thể khởi chạy phiên kết nối Zalo cho tài khoản ID ${accountId}.`);
   }
+  
+  const isTrulyLoggedIn = await isZaloLoggedIn(accountId, true);
+  if (!isTrulyLoggedIn) {
+    logCallback(`[Zalo ID ${accountId}] Phiên đăng nhập đã hết hạn hoặc chưa đăng nhập. Cập nhật trạng thái disconnected.`);
+    await run("UPDATE zalo_accounts SET status = 'disconnected', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [accountId]);
+    throw new Error(`Tài khoản Zalo ID ${accountId} chưa đăng nhập (đang chờ quét mã QR). Dừng tiến trình gửi.`);
+  }
+
   const zaloPage = session.page;
 
   logCallback(`[Zalo ID ${accountId}] Đang tiến hành gửi tin trực tiếp cho SĐT: ${phone}`);

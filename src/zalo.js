@@ -83,6 +83,15 @@ export async function initZaloSession(accountId = 'default', logCallback = log, 
   logCallback(`[Zalo ID ${accountId}] Đang tải trang chat.zalo.me...`);
   await page.goto('https://chat.zalo.me', { waitUntil: 'networkidle2', timeout: 60000 });
   
+  try {
+    await page.waitForFunction(() => {
+      return document.querySelector('input[placeholder*="Tìm kiếm"], input[placeholder*="Search"], #contact-search-input') !== null || 
+             document.querySelector('.qrcode, [class*="qr-"], #app-login') !== null;
+    }, { timeout: 15000 });
+  } catch (e) {
+    logCallback(`[Zalo ID ${accountId}] Cảnh báo: Giao diện Zalo Web phản hồi chậm.`);
+  }
+  
   const sessionData = { browser, page, screenshotInterval: null };
   activeSessions.set(accountId, sessionData);
 
