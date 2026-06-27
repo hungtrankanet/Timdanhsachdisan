@@ -554,10 +554,10 @@ export async function runZaloCampaignWorker() {
               await closeZaloSession(accountId);
             }
             
-            // Nghỉ giải lao 5 phút (300 giây) nhưng kiểm tra mỗi giây để có thể ngắt ngay lập tức
-            logZalo('Nghỉ giải lao 5 phút (300 giây) trước khi gửi tiếp theo...');
+            // Nghỉ giải lao 10 phút (600 giây) nhưng kiểm tra mỗi giây để có thể ngắt ngay lập tức
+            logZalo('Nghỉ giải lao 10 phút (600 giây) trước khi gửi tiếp theo...');
             let interrupted = false;
-            for (let i = 0; i < 300; i++) {
+            for (let i = 0; i < 600; i++) {
               await new Promise(r => setTimeout(r, 1000));
               
               const innerStatus = await get('SELECT value FROM configs WHERE key = "zalo_campaign_status"');
