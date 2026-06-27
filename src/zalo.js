@@ -86,7 +86,7 @@ export async function initZaloSession(accountId = 'default', logCallback = log, 
   const sessionData = { browser, page, screenshotInterval: null };
   activeSessions.set(accountId, sessionData);
 
-  const loggedIn = await isZaloLoggedIn(accountId);
+  const loggedIn = await isZaloLoggedIn(accountId, true);
   if (loggedIn) {
     logCallback(`[Zalo ID ${accountId}] Phiên đăng nhập được tải thành công.`);
     await run("UPDATE zalo_accounts SET status = 'connected', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [accountId]);
@@ -101,7 +101,7 @@ export async function initZaloSession(accountId = 'default', logCallback = log, 
         const session = activeSessions.get(accountId);
         if (!session || !session.page) return;
         
-        const loggedInNow = await isZaloLoggedIn(accountId);
+        const loggedInNow = await isZaloLoggedIn(accountId, true);
         if (loggedInNow) {
           logCallback(`[Zalo ID ${accountId}] Đăng nhập thành công! Đang tắt bộ chụp màn hình...`);
           clearInterval(session.screenshotInterval);

@@ -2,7 +2,7 @@ import { get } from './database.js';
 
 export const activeSessions = new Map();
 
-export async function isZaloLoggedIn(accountId = 'default') {
+export async function isZaloLoggedIn(accountId = 'default', liveCheckOnly = false) {
   // 1. Kiểm tra live browser session trước
   const session = activeSessions.get(String(accountId));
   if (session && session.browser && session.page) {
@@ -11,6 +11,9 @@ export async function isZaloLoggedIn(accountId = 'default') {
       if (searchInput !== null) return true;
     } catch (e) {}
   }
+  
+  if (liveCheckOnly) return false;
+
   // 2. Fallback: kiểm tra DB status (On-Demand mode khi browser đã đóng)
   try {
     const row = await get('SELECT status FROM zalo_accounts WHERE id = ?', [accountId]);
