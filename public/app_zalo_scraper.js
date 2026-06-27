@@ -389,3 +389,110 @@ async function addToQueue() {
     }
   }
 }
+
+// ===== ZALO CAMPAIGN LIVE STATS =====
+let zaloCampaignStatsInterval = null;
+
+async function loadZaloCampaignStats() {
+  try {
+    const res = await fetch('/api/zalo/campaign-stats');
+    if (!res.ok) return;
+    const data = await res.json();
+
+    const statsPanel = document.getElementById('zalo-campaign-stats');
+    if (!statsPanel) return;
+
+    // Luôn hiển thị stats
+    statsPanel.style.display = 'block';
+
+    // Số tài khoản kết nối
+    const connectedEl = document.getElementById('zalo-stat-connected');
+    if (connectedEl) {
+      connectedEl.textContent = data.total_connected;
+      connectedEl.style.color = data.total_connected > 0 ? '#4caf50' : 'var(--accent-red)';
+    }
+
+    // Lead chờ gửi
+    const pendingEl = document.getElementById('zalo-stat-pending');
+    if (pendingEl) pendingEl.textContent = data.pending_leads;
+
+    // Follow-up pipeline
+    const fu = data.followup || {};
+    const d1 = document.getElementById('zalo-fu-d1');
+    const d3 = document.getElementById('zalo-fu-d3');
+    const d5 = document.getElementById('zalo-fu-d5');
+    const replied = document.getElementById('zalo-fu-replied');
+    if (d1) d1.textContent = fu.day1_waiting || 0;
+    if (d3) d3.textContent = fu.day3_waiting || 0;
+    if (d5) {
+      d5.textContent = fu.day5_transfer || 0;
+      d5.style.color = (fu.day5_transfer > 0) ? '#ff9800' : 'var(--text-muted)';
+    }
+    if (replied) replied.textContent = fu.replied || 0;
+
+    // Per-account mini table
+    const miniTable = document.getElementById('zalo-accounts-mini');
+    if (miniTable && Array.isArray(data.accounts) && data.accounts.length > 0) {
+      miniTable.innerHTML = data.accounts.map(acc => `
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,0.04);">
+          <span style="color: ${acc.connected ? '#4caf50' : 'var(--accent-red)'}">
+            ${acc.connected ? '🟢' : '🔴'} ${acc.name}
+          </span>
+          <span style="color: var(--text-muted)">${acc.sent_today}/${acc.daily_limit}</span>
+        </div>
+      `).join('');
+    } else if (miniTable) {
+      miniTable.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 4px 0;">Chưa có tài khoản Zalo nào</div>';
+    }
+
+    // Working hours
+    const dot = document.getElementById('zalo-working-hours-dot');
+    const txt = document.getElementById('zalo-working-hours-text');
+    if (dot && txt) {
+      if (data.working_hours) {
+        dot.style.background = '#4caf50';
+        dot.style.boxShadow = '0 0 6px #4caf50';
+        txt.textContent = `Trong khung giờ gửi (${data.current_time_vn} VN)`;
+        txt.style.color = '#4caf50';
+      } else {
+        dot.style.background = '#aaa';
+        dot.style.boxShadow = 'none';
+        txt.textContent = `Ngoài giờ gửi (${data.current_time_vn} VN — 8:30-12h, 13:30-17h)`;
+        txt.style.color = 'var(--text-muted)';
+      }
+    }
+
+    // Update badge
+    const badge = document.getElementById('zalo-campaign-status-badge');
+    const btn = document.getElementById('btn-toggle-zalo-campaign');
+    if (badge && btn) {
+      if (data.campaign_status === 'active') {
+        badge.textContent = `🟢 Đang gửi (${data.total_connected} TK)`;
+        badge.style.color = '#4caf50';
+        btn.textContent = 'Dừng chiến dịch Zalo';
+        btn.className = 'btn btn-primary';
+      } else {
+        badge.textContent = '🔴 Tạm dừng';
+        badge.style.color = 'var(--accent-red)';
+        btn.textContent = 'Bắt đầu gửi Zalo';
+        btn.className = 'btn btn-secondary';
+      }
+    }
+
+  } catch (err) {
+    console.error('[ZaloStats]', err);
+  }
+}
+
+// Khởi động auto-refresh stats
+function startZaloCampaignStatsRefresh() {
+  loadZaloCampaignStats();
+  if (!zaloCampaignStatsInterval) {
+    zaloCampaignStatsInterval = setInterval(loadZaloCampaignStats, 30000);
+  }
+}
+
+// Gọi ngay khi trang load
+document.addEventListener('DOMContentLoaded', () => {
+  startZaloCampaignStatsRefresh();
+});

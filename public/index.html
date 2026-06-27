@@ -208,14 +208,53 @@
         </div>
 
         <!-- 1b. ZALO CAMPAIGN PANEL -->
-        <div class="glass-card panel-card">
-          <h3>Chiến dịch kết bạn Zalo</h3>
-          <div style="margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between;">
-            <span style="font-size: 13px; color: var(--text-muted);">Trạng thái:</span>
-            <span id="zalo-campaign-status-badge" style="font-weight: bold; color: var(--accent-red); font-size: 13px;">Đang dừng gửi</span>
+        <div class="glass-card panel-card" style="grid-column: span 1;">
+          <h3 style="margin-bottom: 12px;">📱 Zalo Campaign</h3>
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+            <span style="font-size: 12px; color: var(--text-muted);">Trạng thái:</span>
+            <span id="zalo-campaign-status-badge" style="font-weight: bold; color: var(--accent-red); font-size: 13px;">Đang dừng</span>
           </div>
+
+          <!-- Zalo Live Stats -->
+          <div id="zalo-campaign-stats" style="margin-bottom: 12px; display: none;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px;">
+              <div style="background: rgba(0,0,0,0.3); border-radius: 8px; padding: 8px; text-align: center;">
+                <div id="zalo-stat-connected" style="font-size: 22px; font-weight: 700; color: #4caf50;">0</div>
+                <div style="font-size: 10px; color: var(--text-muted);">TK Kết Nối</div>
+              </div>
+              <div style="background: rgba(0,0,0,0.3); border-radius: 8px; padding: 8px; text-align: center;">
+                <div id="zalo-stat-pending" style="font-size: 22px; font-weight: 700; color: var(--accent-gold);">0</div>
+                <div style="font-size: 10px; color: var(--text-muted);">Lead Chờ Gửi</div>
+              </div>
+            </div>
+            <!-- Follow-up pipeline -->
+            <div style="background: rgba(0,0,0,0.2); border-radius: 8px; padding: 8px; margin-bottom: 8px; font-size: 11px;">
+              <div style="color: var(--text-muted); margin-bottom: 4px; font-weight: 600;">Follow-up Pipeline:</div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                <span>📩 Chờ ngày 1</span><span id="zalo-fu-d1" style="color: #fff; font-weight: 600;">0</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                <span>📩 Chờ ngày 3</span><span id="zalo-fu-d3" style="color: #fff; font-weight: 600;">0</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                <span>🔄 Chờ chuyển ng.5</span><span id="zalo-fu-d5" style="color: var(--accent-gold); font-weight: 600;">0</span>
+              </div>
+              <div style="display: flex; justify-content: space-between;">
+                <span>✅ Đã phản hồi</span><span id="zalo-fu-replied" style="color: #4caf50; font-weight: 600;">0</span>
+              </div>
+            </div>
+            <!-- Accounts table -->
+            <div id="zalo-accounts-mini" style="font-size: 11px; margin-bottom: 6px;"></div>
+            <!-- Working hours indicator -->
+            <div style="display: flex; align-items: center; gap: 6px; font-size: 11px;">
+              <span id="zalo-working-hours-dot" style="width: 8px; height: 8px; border-radius: 50%; background: #aaa; display: inline-block;"></span>
+              <span id="zalo-working-hours-text" style="color: var(--text-muted);">Đang kiểm tra khung giờ...</span>
+            </div>
+          </div>
+
           <button id="btn-toggle-zalo-campaign" class="btn btn-secondary" style="width: 100%;">Gửi tin nhắn kết bạn Zalo</button>
         </div>
+
 
         <!-- 2. GOOGLE SHEETS SETTINGS -->
         <div class="glass-card panel-card">

@@ -103,7 +103,7 @@ export async function initZaloSession(accountId = 'default', logCallback = log, 
         
         const loggedInNow = await isZaloLoggedIn(accountId);
         if (loggedInNow) {
-          logCallback(`[Zalo ID ${accountId}] Đăng nhập thành công! Đang tắt bộ chụp màn hình và giải phóng trình duyệt...`);
+          logCallback(`[Zalo ID ${accountId}] Đăng nhập thành công! Đang tắt bộ chụp màn hình...`);
           clearInterval(session.screenshotInterval);
           session.screenshotInterval = null;
           
@@ -112,14 +112,16 @@ export async function initZaloSession(accountId = 'default', logCallback = log, 
           const profileInfo = await session.page.evaluate(() => {
             const nameEl = document.querySelector('.current-user-name') || document.querySelector('[class*="profile"]');
             return nameEl ? nameEl.innerText.trim() : 'Zalo Account';
-          });
+          }).catch(() => 'Zalo Account');
           
           await run(
             "UPDATE zalo_accounts SET status = 'connected', display_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
             [profileInfo, accountId]
           );
 
-          await closeZaloSession(accountId);
+          // GIỮ SESSION SỐNG — không đóng browser sau đăng nhập
+          // Campaign worker sẽ dùng activeSessions để gửi tin
+          logCallback(`[Zalo ID ${accountId}] Phiên Zalo đang chạy nền sẵn sàng gửi tin.`);
           return;
         }
 

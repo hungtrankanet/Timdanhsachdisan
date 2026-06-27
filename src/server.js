@@ -168,19 +168,33 @@ app.post('/api/zalo/campaign/toggle', async (req, res) => {
 // 9d. API: Get system state status
 app.get('/api/status', async (req, res) => {
   try {
+    const { activeSessions } = await import('./zalo_state.js');
     const statusRow = await get('SELECT value FROM configs WHERE key = "scheduler_status"');
     const campaignStatusRow = await get('SELECT value FROM configs WHERE key = "zalo_campaign_status"');
     const taskRow = await get('SELECT value FROM configs WHERE key = "current_task"');
     const sheetsRow = await get('SELECT value FROM configs WHERE key = "sheets_web_app_url"');
     
-    const activeAcc = await get("SELECT COUNT(*) as count FROM zalo_accounts WHERE status = 'connected'");
-    const loggedIn = activeAcc && activeAcc.count > 0;
+    // Đếm tài khoản đang thực sự kết nối từ in-memory sessions
+    const allAccounts = await all("SELECT id FROM zalo_accounts");
+    let connectedCount = 0;
+    for (const acc of allAccounts) {
+      const { isZaloLoggedIn } = await import('./zalo_state.js');
+      const alive = await isZaloLoggedIn(acc.id);
+      if (alive) connectedCount++;
+    }
+    // Fallback: check DB status if no live sessions (e.g. after server restart)
+    if (connectedCount === 0) {
+      const dbConnected = await get("SELECT COUNT(*) as count FROM zalo_accounts WHERE status = 'connected'");
+      connectedCount = dbConnected ? dbConnected.count : 0;
+    }
+    const loggedIn = connectedCount > 0;
     
     res.json({
       scheduler_status: statusRow ? statusRow.value : 'idle',
       zalo_campaign_status: campaignStatusRow ? campaignStatusRow.value : 'idle',
       current_task: taskRow ? taskRow.value : 'Tạm dừng (Idle)',
       zalo_logged_in: loggedIn,
+      zalo_connected_count: connectedCount,
       sheets_configured: !!(sheetsRow && sheetsRow.value)
     });
   } catch (err) {
@@ -188,7 +202,87 @@ app.get('/api/status', async (req, res) => {
   }
 });
 
-// GET /api/stats/progress
+// GET /api/zalo/campaign-stats — Live Zalo campaign metrics
+app.get('/api/zalo/campaign-stats', async (req, res) => {
+  try {
+    const { isZaloLoggedIn } = await import('./zalo_state.js');
+
+    // Gi\u1edd Vi\u1ec7t Nam hi\u1ec7n t\u1ea1i
+    const now = new Date();
+    const vnTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
+    const vnH = vnTime.getUTCHours();
+    const vnM = vnTime.getUTCMinutes();
+    const vnTimeStr = `${String(vnH).padStart(2,'0')}:${String(vnM).padStart(2,'0')}`;
+    const inWorkingHours = (vnH > 8 || (vnH === 8 && vnM >= 30)) && vnH < 12
+                        || (vnH > 13 || (vnH === 13 && vnM >= 30)) && vnH < 17;
+
+    // \u0110\u1ea7u ng\u00e0y theo gi\u1edd VN
+    const vnStartOfDay = new Date(vnTime);
+    vnStartOfDay.setUTCHours(0, 0, 0, 0);
+    const startOfDayUTC = new Date(vnStartOfDay.getTime() - 7 * 3600 * 1000).toISOString();
+
+    const accounts = await all("SELECT id, custom_name, display_name, status, assigned_regions FROM zalo_accounts");
+
+    const accountStats = await Promise.all(accounts.map(async acc => {
+      const liveSession = await isZaloLoggedIn(String(acc.id));
+      const dbConnected = acc.status === 'connected';
+      const connected = liveSession || dbConnected;
+
+      const sentRow = await get(
+        `SELECT COUNT(DISTINCT lead_id) as count FROM zalo_chat_logs WHERE (sender='me' OR sender='bot') AND timestamp >= ? AND zalo_account_id = ?`,
+        [startOfDayUTC, acc.id]
+      );
+
+      // T\u00ednh gi\u1edbi h\u1ea1n ng\u00e0y
+      let startDateRow = await get('SELECT value FROM configs WHERE key = "campaign_start_date"');
+      const startDateStr = startDateRow ? startDateRow.value : now.toISOString();
+      const daysDiff = Math.floor((now - new Date(startDateStr)) / (1000 * 60 * 60 * 24));
+      let dailyLimit = 50;
+      if (daysDiff >= 7 && daysDiff < 15) dailyLimit = 70;
+      else if (daysDiff >= 15) dailyLimit = 100;
+
+      return {
+        id: acc.id,
+        name: acc.custom_name || acc.display_name || `T\u00e0i kho\u1ea3n #${acc.id}`,
+        connected,
+        live_session: liveSession,
+        db_status: acc.status,
+        sent_today: sentRow ? sentRow.count : 0,
+        daily_limit: dailyLimit,
+        regions: acc.assigned_regions || 'T\u1ea5t c\u1ea3'
+      };
+    }));
+
+    // T\u1ed5ng s\u1ed1 lead ch\u1edd g\u1eedi
+    const pendingRow = await get("SELECT COUNT(*) as count FROM leads WHERE (verification_status='verified' OR verification_status='partially_verified') AND zalo_status='pending'");
+    // Follow-up pipeline
+    const followD1 = await get("SELECT COUNT(*) as count FROM leads WHERE zalo_followup_stage = 1");
+    const followD3 = await get("SELECT COUNT(*) as count FROM leads WHERE zalo_followup_stage = 2");
+    const followD5 = await get("SELECT COUNT(*) as count FROM leads WHERE zalo_followup_stage = 3");
+    const replied = await get("SELECT COUNT(*) as count FROM leads WHERE zalo_followup_stage = -1");
+
+    const campaignStatus = await get('SELECT value FROM configs WHERE key = "zalo_campaign_status"');
+
+    res.json({
+      campaign_status: campaignStatus ? campaignStatus.value : 'idle',
+      working_hours: inWorkingHours,
+      current_time_vn: vnTimeStr,
+      accounts: accountStats,
+      total_connected: accountStats.filter(a => a.connected).length,
+      pending_leads: pendingRow ? pendingRow.count : 0,
+      followup: {
+        day1_waiting: followD1 ? followD1.count : 0,
+        day3_waiting: followD3 ? followD3.count : 0,
+        day5_transfer: followD5 ? followD5.count : 0,
+        replied: replied ? replied.count : 0
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 app.get('/api/stats/progress', async (req, res) => {
   try {
     const totalRow = await get('SELECT COUNT(*) as count FROM leads');

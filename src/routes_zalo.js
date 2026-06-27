@@ -90,10 +90,20 @@ router.post('/api/zalo/init', async (req, res) => {
 
 router.get('/api/zalo/status', async (req, res) => {
   try {
-    const loggedIn = await isZaloLoggedIn('default');
-    res.json({ loggedIn });
+    const accounts = await all('SELECT id FROM zalo_accounts');
+    const connectedIds = [];
+    for (const acc of accounts) {
+      const alive = await isZaloLoggedIn(String(acc.id));
+      if (alive) connectedIds.push(acc.id);
+    }
+    // Fallback to DB if no in-memory sessions (e.g. after server restart or headless mode)
+    if (connectedIds.length === 0) {
+      const dbConnected = await all("SELECT id FROM zalo_accounts WHERE status = 'connected'");
+      dbConnected.forEach(r => connectedIds.push(r.id));
+    }
+    res.json({ loggedIn: connectedIds.length > 0, connectedCount: connectedIds.length, connectedIds });
   } catch (e) {
-    res.json({ loggedIn: false });
+    res.json({ loggedIn: false, connectedCount: 0, connectedIds: [] });
   }
 });
 
