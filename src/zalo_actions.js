@@ -57,8 +57,10 @@ export async function sendZaloInvite(accountId, leadId, logCallback = log) {
       await run("UPDATE leads SET zalo_status = 'not_found', zalo_notes = 'Số điện thoại chưa đăng ký Zalo', assigned_zalo_account_id = ? WHERE id = ?", [accountId, leadId]);
       return;
     }
+    
+    // If the Profile Modal popped up, we need to handle "Kết bạn" and "Nhắn tin"
+    const isProfileModalOpen = await zaloPage.evaluate(() => !!document.querySelector('.profile-dialog, [class*="profile"]'));
 
-    await zaloPage.waitForSelector('#richInput, div[contenteditable="true"]', { timeout: 10000 });
 
     const friendStatus = await zaloPage.evaluate(async () => {
       const buttons = Array.from(document.querySelectorAll('button, div, span'));
@@ -106,6 +108,17 @@ export async function sendZaloInvite(accountId, leadId, logCallback = log) {
       notes.push('Đã là bạn bè/Không cần kết bạn.');
     }
 
+    // Ensure we open the chat window by clicking "Nhắn tin" on the profile modal
+    await zaloPage.evaluate(() => {
+      const buttons = Array.from(document.querySelectorAll('button, div, span, [role="button"]'));
+      const messageBtn = buttons.find(b => b.innerText && b.innerText.trim() === 'Nhắn tin');
+      if (messageBtn) {
+        messageBtn.click();
+      }
+    });
+    await new Promise(r => setTimeout(r, 2000));
+    await zaloPage.waitForSelector('#richInput, div[contenteditable="true"]', { timeout: 10000 });
+
     logCallback(`[Zalo ID ${accountId}] Đang soạn và gửi tin nhắn chiến dịch...`);
     const messageText = `Kính gửi anh/chị,\n\nEm đại diện Ban tổ chức "Hành trình Trăm năm Di sản Hội họa Sơn mài Mỹ thuật Việt Nam".\n\nChúng em xin gửi tặng anh/chị quyền lợi hội viên viết bài miễn phí giới thiệu thương hiệu và tác phẩm trên trang web chính thức của dự án: https://tramnamdisanhoihoavasonmai.vn\n\nĐồng thời, trân trọng kính mời anh/chị đăng sản phẩm lên trang để cộng đồng bình chọn các tác phẩm sơn mài tiêu biểu.\n\nChúc anh/chị nhiều sức khỏe và sáng tạo!`;
     
@@ -128,7 +141,20 @@ export async function sendZaloInvite(accountId, leadId, logCallback = log) {
     
     await new Promise(r => setTimeout(r, 1000));
     await zaloPage.keyboard.press('Enter');
-    logCallback(`[Zalo ID ${accountId}] Đã nhấn Enter để gửi tin nhắn.`);
+    await new Promise(r => setTimeout(r, 500));
+    
+    // Fallback: Click physical Send button if Enter didn't work
+    await zaloPage.evaluate(() => {
+      const sendIcons = Array.from(document.querySelectorAll('i, span, div')).filter(el => {
+        const className = el.className;
+        return typeof className === 'string' && (className.includes('icon-line-send') || className.includes('fa-paper-plane'));
+      });
+      if (sendIcons.length > 0) {
+        sendIcons[0].click();
+      }
+    });
+
+    logCallback(`[Zalo ID ${accountId}] Đã thực hiện thao tác gửi tin nhắn.`);
     
     await new Promise(r => setTimeout(r, 2000));
     
@@ -236,6 +262,16 @@ export async function syncZaloChat(accountId, leadId, logCallback = log) {
       logCallback(`[Zalo ID ${accountId}] SĐT chưa đăng ký Zalo hoặc không tìm thấy: ${phone}`);
       return;
     }
+    
+    // Ensure we open the chat window by clicking "Nhắn tin" on the profile modal
+    await zaloPage.evaluate(() => {
+      const buttons = Array.from(document.querySelectorAll('button, div, span, [role="button"]'));
+      const messageBtn = buttons.find(b => b.innerText && b.innerText.trim() === 'Nhắn tin');
+      if (messageBtn) {
+        messageBtn.click();
+      }
+    });
+    await new Promise(r => setTimeout(r, 2000));
 
     try {
       await zaloPage.waitForSelector('.chat-item, [class*="chat-item"]', { timeout: 5000 });
@@ -514,6 +550,16 @@ export async function sendZaloMessageDirect(accountId, phone, messageText, logCa
       throw new Error(`Số điện thoại ${phone} không sử dụng Zalo.`);
     }
 
+    // Ensure we open the chat window by clicking "Nhắn tin" on the profile modal
+    await zaloPage.evaluate(() => {
+      const buttons = Array.from(document.querySelectorAll('button, div, span, [role="button"]'));
+      const messageBtn = buttons.find(b => b.innerText && b.innerText.trim() === 'Nhắn tin');
+      if (messageBtn) {
+        messageBtn.click();
+      }
+    });
+    await new Promise(r => setTimeout(r, 2000));
+
     await zaloPage.waitForSelector('#richInput, div[contenteditable="true"]', { timeout: 10000 });
     
     const chatInputSelector = '#richInput, div[contenteditable="true"]';
@@ -535,6 +581,19 @@ export async function sendZaloMessageDirect(accountId, phone, messageText, logCa
     
     await new Promise(r => setTimeout(r, 1000));
     await zaloPage.keyboard.press('Enter');
+    await new Promise(r => setTimeout(r, 500));
+    
+    // Fallback: Click physical Send button if Enter didn't work
+    await zaloPage.evaluate(() => {
+      const sendIcons = Array.from(document.querySelectorAll('i, span, div')).filter(el => {
+        const className = el.className;
+        return typeof className === 'string' && (className.includes('icon-line-send') || className.includes('fa-paper-plane'));
+      });
+      if (sendIcons.length > 0) {
+        sendIcons[0].click();
+      }
+    });
+
     logCallback(`[Zalo ID ${accountId}] Đã gửi tin nhắn trực tiếp đến ${phone} thành công.`);
 
     let lead = await get('SELECT id FROM leads WHERE phone = ?', [phone]);
