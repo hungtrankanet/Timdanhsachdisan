@@ -592,31 +592,46 @@ app.post('/api/ai/extract-faq', async (req, res) => {
       return res.status(400).json({ error: 'Chưa cấu hình Gemini API Key.' });
     }
 
-    const systemPrompt = `Bạn là một trợ lý AI chuyên nghiệp phân tích văn bản và thiết lập cấu hình Zalo Chatbot Agent.
-Nhiệm vụ của bạn là đọc kỹ tài liệu thô do người dùng cung cấp và trích xuất thành bộ cấu hình đề xuất cho Chatbot, gồm:
-1. Danh sách câu hỏi (question) và câu trả lời (answer) tương ứng (FAQ) bám sát tài liệu.
-2. Danh sách các từ khóa liên quan đến dự án (keywords) phân tách bằng dấu phẩy để nhận diện tin nhắn trong luồng.
-3. Danh sách 2 câu trả lời mẫu sẵn ngoài luồng (canned_replies) lịch sự, chung chung khi khách hỏi vấn đề khác.
-4. Tin nhắn mẫu kịch bản chăm sóc Ngày 1 (zalo_day1_template) ngắn gọn, hỏi thăm xem khách đã đọc thông tin chưa.
-5. Tin nhắn mẫu kịch bản chăm sóc Ngày 3 (zalo_day3_template) ngắn gọn, nhắc lại quyền lợi hội viên viết bài miễn phí.
+    const systemPrompt = `Bạn là một chuyên gia xây dựng kịch bản chăm sóc khách hàng và cấu hình Zalo Chatbot Agent cho doanh nghiệp Việt Nam.
+Nhiệm vụ: Đọc kỹ tài liệu thô dưới đây và trích xuất đầy đủ 5 thành phần sau:
 
-Hãy trả về duy nhất một đối tượng JSON có cấu trúc chính xác như sau:
+**1. DANH SÁCH FAQ TRI THỨC (bắt buộc đủ 50 câu)**
+- Phân tích toàn bộ nội dung tài liệu, đặt câu hỏi mà khách hàng có thể hỏi và trả lời chi tiết dựa trên tài liệu.
+- Nếu tài liệu không đủ 50 câu hỏi trực tiếp, hãy SUY LUẬN thêm các câu hỏi liên quan, mở rộng về đối tượng tham gia, quyền lợi, quy trình, chi phí, thời gian, điều kiện...
+- Câu trả lời phải thân thiện, đầy đủ thông tin, bằng tiếng Việt.
+
+**2. TỪ KHÓA NHẬN DIỆN TRONG LUỒNG**
+- Liệt kê 10-20 từ khóa quan trọng nhất liên quan đến dự án/sản phẩm, phân tách bằng dấu phẩy.
+
+**3. CÂU TRẢ LỜI MẪU NGOÀI LUỒNG (5 câu)**
+- Các câu trả lời lịch sự, chung chung khi khách hỏi ngoài phạm vi kiến thức.
+- Phong cách thân thiện, hướng khách quay lại chủ đề chính.
+
+**4. KỊCH BẢN FOLLOW-UP - TIN NHẮN SAU 24 GIỜ (Ngày 1)**
+- Tin nhắn ngắn gọn (1-3 câu), hỏi thăm xem khách đã xem thông tin chưa.
+- Không gây áp lực, thân thiện, mở ra cuộc trò chuyện.
+
+**5. KỊCH BẢN FOLLOW-UP - TIN NHẮN SAU 48 GIỜ (Ngày 3)**
+- Tin nhắn nhắc lại 1 điểm nổi bật nhất / quyền lợi hấp dẫn nhất từ tài liệu.
+- Ngắn gọn (1-3 câu), tạo cảm giác khan hiếm hoặc cơ hội.
+
+Trả về DUY NHẤT một đối tượng JSON theo cấu trúc chính xác sau (không thêm bất kỳ text nào ngoài JSON):
 {
   "faqs": [
-    {
-      "question": "Câu hỏi trích xuất...",
-      "answer": "Câu trả lời..."
-    }
+    { "question": "...", "answer": "..." }
   ],
-  "chatbot_inscope_keywords": "từ khóa 1, từ khóa 2, từ khóa 3...",
+  "chatbot_inscope_keywords": "từ khóa 1, từ khóa 2, ...",
   "chatbot_canned_replies": [
-    "Phản hồi ngoài luồng 1...",
-    "Phản hồi ngoài luồng 2..."
+    "Câu trả lời ngoài luồng 1...",
+    "Câu trả lời ngoài luồng 2...",
+    "Câu trả lời ngoài luồng 3...",
+    "Câu trả lời ngoài luồng 4...",
+    "Câu trả lời ngoài luồng 5..."
   ],
-  "zalo_day1_template": "Tin nhắn ngày 1...",
-  "zalo_day3_template": "Tin nhắn ngày 3..."
-}
-Không viết bất kỳ lời dẫn giải nào, không định dạng markdown \`\`\`json ở đầu và cuối, chỉ trả về chuỗi JSON object hợp lệ.`;
+  "zalo_day1_template": "Tin nhắn sau 24 giờ...",
+  "zalo_day3_template": "Tin nhắn sau 48 giờ..."
+}`;
+
 
     // Try models in order — auto-fallback if a model is deprecated
     const GEMINI_MODELS = [

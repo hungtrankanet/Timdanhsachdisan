@@ -222,7 +222,8 @@ function setupAiEventListeners() {
         const data = await res.json();
         
         if (res.ok && data.success) {
-          if (typeof showToast === 'function') showToast(`Gemini đã trích xuất thành công các đề xuất cấu hình và tri thức!`, 'success');
+          const faqCount = Array.isArray(data.faqs) ? data.faqs.length : 0;
+          if (typeof showToast === 'function') showToast(`Gemini đã trích xuất thành công ${faqCount} câu hỏi FAQ và toàn bộ kịch bản chăm sóc!`, 'success');
           
           // Populate drafts
           document.getElementById('draft-keywords').value = data.chatbot_inscope_keywords || '';
@@ -242,8 +243,8 @@ function setupAiEventListeners() {
           const draftContainer = document.getElementById('ai-extract-preview-container');
           draftContainer.style.display = 'block';
           draftContainer.scrollIntoView({ behavior: 'smooth' });
-          
-          document.getElementById('ai-extract-text').value = '';
+          // NOTE: textarea NOT cleared — document is preserved
+
         } else {
           throw new Error(data.error || 'Trích xuất tri thức thất bại.');
         }
